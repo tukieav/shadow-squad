@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><style>html,body{margin:0;padding:0;background:#000}</style></head>
+<body>
+<canvas id="cover"></canvas>
+<script>
+// Cover generator for Shadow Squad — ?w=&h=&sq=1 (portrait/square layout)
+const q = new URLSearchParams(location.search);
+const W = parseInt(q.get('w') || '1920', 10);
+const H = parseInt(q.get('h') || '1080', 10);
+const sqMode = q.get('sq') === '1';
+const canvas = document.getElementById('cover');
+canvas.width = W; canvas.height = H;
+const g = canvas.getContext('2d');
+const k = Math.min(W, H) / 1080;
+
+// background: dark facility floor with grid
+const bg = g.createLinearGradient(0, 0, 0, H);
+bg.addColorStop(0, '#0a0d16'); bg.addColorStop(0.5, '#111827'); bg.addColorStop(1, '#0b0f1c');
+g.fillStyle = bg; g.fillRect(0, 0, W, H);
+g.strokeStyle = 'rgba(80,110,160,0.10)'; g.lineWidth = 1;
+const gs = 70 * k;
+for (let x = 0; x < W; x += gs) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+for (let y = 0; y < H; y += gs) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+
+function cone(x, y, ang, len, color) {
+  const grad = g.createRadialGradient(x, y, 10, x, y, len);
+  grad.addColorStop(0, color); grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.beginPath(); g.moveTo(x, y);
+  g.arc(x, y, len, ang - 0.55, ang + 0.55); g.closePath(); g.fill();
+}
+function robot(x, y, ang, s) {
+  g.save(); g.translate(x, y); g.rotate(ang + Math.PI / 2); g.scale(s, s);
+  g.fillStyle = '#333c4e'; g.fillRect(-26, -20, 10, 44); g.fillRect(16, -20, 10, 44);
+  g.fillStyle = '#8892a8';
+  rr(-20, -24, 40, 48, 10); g.fill();
+  g.fillStyle = '#aab4ca'; rr(-14, -18, 28, 24, 8); g.fill();
+  g.fillStyle = '#ffd45e'; g.beginPath(); g.arc(0, -20, 7, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+function agent(x, y, ang, s, color) {
+  g.save(); g.translate(x, y); g.rotate(ang + Math.PI / 2); g.scale(s, s);
+  g.shadowColor = color; g.shadowBlur = 30;
+  g.fillStyle = '#10141f'; g.beginPath(); g.ellipse(0, 0, 24, 29, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = color; g.beginPath(); g.ellipse(0, 0, 18, 22, 0, 0, Math.PI * 2); g.fill();
+  g.shadowBlur = 0;
+  g.fillStyle = '#0c0f18'; g.beginPath(); g.arc(0, -7, 12, 0, Math.PI * 2); g.fill();
+  g.fillStyle = color; g.beginPath(); g.arc(0, -11, 4.5, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+function rr(x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function crate(x, y, s) {
+  g.fillStyle = '#6b5335'; g.fillRect(x, y, s, s);
+  g.fillStyle = '#7d6240'; g.fillRect(x + s * 0.1, y + s * 0.1, s * 0.8, s * 0.8);
+  g.strokeStyle = '#4a3a24'; g.lineWidth = s * 0.06;
+  g.beginPath(); g.moveTo(x + s * 0.1, y + s * 0.1); g.lineTo(x + s * 0.9, y + s * 0.9);
+  g.moveTo(x + s * 0.9, y + s * 0.1); g.lineTo(x + s * 0.1, y + s * 0.9); g.stroke();
+}
+
+if (!sqMode) {
+  // 16:9: guards right with cones, agents sneaking left-center, title left
+  cone(W * 0.72, H * 0.30, Math.PI * 0.85, 420 * k, 'rgba(255,220,110,0.28)');
+  cone(W * 0.85, H * 0.72, Math.PI * 1.05, 480 * k, 'rgba(255,90,70,0.25)');
+  crate(W * 0.52, H * 0.62, 90 * k);
+  crate(W * 0.60, H * 0.20, 80 * k);
+  robot(W * 0.72, H * 0.30, Math.PI * 0.85, 1.4 * k);
+  robot(W * 0.85, H * 0.72, Math.PI * 1.05, 1.6 * k);
+  agent(W * 0.46, H * 0.48, -0.4, 2.0 * k, '#3fd8ff');
+  agent(W * 0.56, H * 0.78, -0.9, 1.7 * k, '#ffab40');
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(80,200,255,0.85)'; g.shadowBlur = 34 * k;
+  g.fillStyle = '#ffffff';
+  const fs = Math.min(170 * k, W * 0.105);
+  g.font = '900 ' + fs + 'px "Segoe UI", Arial, sans-serif';
+  g.fillText('SHADOW', W * 0.05, H * 0.38);
+  g.fillText('SQUAD', W * 0.05, H * 0.38 + fs * 1.02);
+  g.shadowBlur = 0;
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  g.font = '600 ' + (46 * k) + 'px "Segoe UI", Arial, sans-serif';
+  g.fillText('Sneak. Hack. Vanish.', W * 0.052, H * 0.38 + fs * 1.8);
+} else {
+  // portrait/square: title top (wrapped), scene below
+  cone(W * 0.78, H * 0.52, Math.PI * 0.9, 340 * k, 'rgba(255,220,110,0.28)');
+  cone(W * 0.20, H * 0.80, -Math.PI * 0.15, 380 * k, 'rgba(255,90,70,0.25)');
+  crate(W * 0.10, H * 0.55, 85 * k);
+  crate(W * 0.62, H * 0.88, 75 * k);
+  robot(W * 0.78, H * 0.52, Math.PI * 0.9, 1.35 * k);
+  robot(W * 0.20, H * 0.80, -Math.PI * 0.15, 1.5 * k);
+  agent(W * 0.38, H * 0.62, -0.4, 1.9 * k, '#3fd8ff');
+  agent(W * 0.55, H * 0.76, -0.9, 1.6 * k, '#ffab40');
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(80,200,255,0.85)'; g.shadowBlur = 28 * k;
+  g.fillStyle = '#ffffff';
+  const fs = Math.min(150 * k, W * 0.155);
+  g.font = '900 ' + fs + 'px "Segoe UI", Arial, sans-serif';
+  g.fillText('SHADOW', W * 0.5, H * 0.11);
+  g.fillText('SQUAD', W * 0.5, H * 0.11 + fs * 1.02);
+  g.shadowBlur = 0;
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  g.font = '600 ' + Math.min(44 * k, W * 0.05) + 'px "Segoe UI", Arial, sans-serif';
+  g.fillText('Sneak. Hack. Vanish.', W * 0.5, H * 0.11 + fs * 1.75);
+}
+document.title = 'ready';
+</script>
+</body>
+</html>

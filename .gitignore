@@ -1,0 +1,5 @@
+node_modules/
+dist/
+marketing/vid-landscape/
+marketing/vid-portrait/
+*.zip
