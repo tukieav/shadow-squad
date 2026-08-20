@@ -19,7 +19,7 @@ for (const [name, w, h, sq] of covers) {
 
 // gameplay screenshots 1920x1080
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-await page.goto('http://localhost:8487/?debug=1');
+await page.goto('http://localhost:8522/?debug=1');
 await page.waitForFunction(() => window.__astro && window.__astro.getState().state === 'menu');
 await sleep(500);
 await page.screenshot({ path: 'marketing/screenshot-menu.png' });
