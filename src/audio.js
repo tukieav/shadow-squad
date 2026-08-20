@@ -124,3 +124,30 @@ export function detectTick() {
   ensureCtx();
   tone(980, 0.07, 'square', 0.07);
 }
+
+// Sync-lost / denied buzz
+export function failTick() {
+  ensureCtx();
+  tone(220, 0.18, 'sawtooth', 0.12, 0, 110);
+  tone(160, 0.2, 'square', 0.08, 0.08);
+}
+
+// Background music: slow ambient pad loop (procedural, starts on first unlock)
+let musicTimer = null;
+export function startMusic() {
+  ensureCtx();
+  if (musicTimer) return;
+  const bass = [55, 65.4, 49, 58.3];
+  let step = 0;
+  const bar = () => {
+    if (muted || !ctx) return;
+    const t0 = ctx.currentTime;
+    const root = bass[step % bass.length];
+    tone(root, 3.6, 'sine', 0.05, 0, root);
+    tone(root * 2, 3.6, 'triangle', 0.02, 0, root * 2);
+    if (step % 2 === 1) tone(root * 3, 1.6, 'sine', 0.015, 1.8, root * 3);
+    step++;
+  };
+  bar();
+  musicTimer = setInterval(bar, 3800);
+}

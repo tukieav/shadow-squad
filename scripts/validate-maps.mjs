@@ -12,8 +12,9 @@ for (let mi = 0; mi < MISSIONS.length; mi++) {
   const S = find('S'), T = find('T'), X = find('X'), E = find('E');
   if (S.length !== 1) err(`S count ${S.length}`);
   if (T.length !== 1) err(`T count ${T.length}`);
-  if (X.length !== 1) err(`X count ${X.length}`);
+  if (X.length < 1 || X.length > 2) err(`X count ${X.length}`);
   if (E.length < 1) err('no evac');
+  // L (laser gates) count as walkable for reachability — they open after hacking
   const walkable = (x, y) => x >= 0 && y >= 0 && x < W && y < H && g[y][x] !== '#' && g[y][x] !== 'B';
   const bfs = (sx, sy) => {
     const seen = new Set([sx + ',' + sy]); const q = [[sx, sy]];

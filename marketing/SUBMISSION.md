@@ -28,9 +28,15 @@ FEATURES
   sight and wait for the heat to die down
 - Deactivated sentries stay on the floor — other guards who see them raise
   the alarm! Plan your takedowns
-- 5 handcrafted missions with rising complexity
+- 10 handcrafted missions with rising complexity: rotating security cameras,
+  laser gates, synced twin terminals (use both agents at once!) and armored
+  elite sentries immune to frontal takedowns
+- 1-3 star ratings per mission (par time + ghost runs) — replay for perfection
+- Meta-progression: earn INTEL from stars, spend it in the Black Market on
+  permanent gadgets (+1 EMP slot, faster hacking, sprint servos) and agent skins
+- Daily login streak bonus
 - Score system: time bonus, takedown bonus, and a GHOST bonus for zero alarms
-- Mission progress saved across devices
+- Mission progress, stars, intel and unlocks saved across devices
 - Mouse + keyboard and full touch support
 
 HOW TO PLAY
@@ -54,10 +60,11 @@ Click / tap — move. 1 / 2 or portraits — switch agent. Click sentry from beh
 - Rewarded ad #1: "Retry from checkpoint" after failing a mission where the
   terminal was already hacked (once per mission)
 - Rewarded ad #2: "+1 EMP charge" in the mission briefing
-- happytime() on ghost completion (zero alarms)
+- Rewarded ad #3: "x2 INTEL" on the mission-complete screen
+- happytime() on ghost completion (zero alarms) and 3-star ratings
 - game.settings.muteAudio respected + settings change listener; audio muted during ads
-- Mission progress + best scores via data module with localStorage fallback
-- No external requests, all assets procedural, bundle ~32 KB
+- Mission progress, stars, intel, upgrades, skins + best scores via data module with localStorage fallback
+- No external requests, all assets procedural, bundle ~47 KB
 - Touch + mouse + keyboard; works on low-end devices
 - Live demo: https://tukieav.github.io/shadow-squad/
 

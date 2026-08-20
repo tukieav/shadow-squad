@@ -8,9 +8,9 @@ page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 await page.goto('https://tukieav.github.io/shadow-squad/?debug=1', { waitUntil: 'load' });
 await page.waitForFunction(() => window.__astro && window.__astro.getState().state === 'menu', null, { timeout: 20000 });
-console.log('menu reached');
+console.log('menu reached, missions:', await page.evaluate(() => window.__astro.getState().missionCount));
 // play a few moves
-await page.evaluate(() => { window.__astro.clickScreen(220, 258); });
+await page.evaluate(() => { window.__astro.clickScreen(268, 166); });
 await sleep(300);
 await page.evaluate(() => { window.__astro.clickScreen(480, 468); });
 await sleep(500);
