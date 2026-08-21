@@ -8,7 +8,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true });
 const ctx = await browser.newContext({ viewport: size, recordVideo: { dir: 'marketing/vid-' + mode, size } });
 const page = await ctx.newPage();
-await page.goto('http://localhost:8522/?debug=1');
+await page.goto('http://localhost:8532/?debug=1');
 await page.waitForFunction(() => window.__astro && window.__astro.getState().state === 'menu');
 await sleep(1200); // show menu briefly
 

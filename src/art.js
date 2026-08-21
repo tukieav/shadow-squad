@@ -295,6 +295,62 @@ function drawCable(g, px, py, T, r) {
   g.bezierCurveTo(px + T * 0.3, py + T * (1 - r) - 1, px + T * 0.7, py + T * r * 0.5 - 1, px + T, py + T * (0.3 + r * 0.4) - 1);
   g.stroke();
 }
+function drawServerRack(g, px, py, T, r) {
+  // tall server cabinet with blinking LED columns (baked static)
+  g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(px + 5, py + 4, T - 6, T - 4);
+  g.fillStyle = '#141b29'; g.fillRect(px + 3, py + 2, T - 6, T - 4);
+  g.strokeStyle = '#2e3a50'; g.strokeRect(px + 3.5, py + 2.5, T - 7, T - 5);
+  // rack units
+  g.strokeStyle = 'rgba(0,0,0,0.5)';
+  for (let i = 1; i < 6; i++) { g.beginPath(); g.moveTo(px + 4, py + 2 + i * (T - 4) / 6); g.lineTo(px + T - 4, py + 2 + i * (T - 4) / 6); g.stroke(); }
+  // LEDs
+  for (let i = 0; i < 6; i++) {
+    for (let j = 0; j < 3; j++) {
+      const lv = hash2(px + i, py + j, Math.round(r * 1000));
+      if (lv < 0.55) {
+        g.fillStyle = lv < 0.12 ? 'rgba(255,110,90,0.9)' : lv < 0.3 ? 'rgba(120,255,170,0.85)' : 'rgba(90,200,255,0.85)';
+        g.fillRect(px + 7 + j * 5, py + 5 + i * (T - 4) / 6, 2.2, 2.2);
+      }
+    }
+  }
+  // vent slits right side
+  g.strokeStyle = 'rgba(140,160,195,0.2)';
+  for (let i = 0; i < 5; i++) { g.beginPath(); g.moveTo(px + T - 12, py + 6 + i * 6); g.lineTo(px + T - 6, py + 6 + i * 6); g.stroke(); }
+}
+function drawLocker(g, px, py, T, r) {
+  g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(px + 5, py + 5, T - 8, T - 8);
+  g.fillStyle = r < 0.5 ? '#2c3a4e' : '#3a3348';
+  g.fillRect(px + 3, py + 3, T - 6, T - 6);
+  g.strokeStyle = 'rgba(0,0,0,0.5)';
+  g.beginPath(); g.moveTo(px + T / 2, py + 3); g.lineTo(px + T / 2, py + T - 3); g.stroke();
+  g.fillStyle = 'rgba(255,255,255,0.10)';
+  g.fillRect(px + 3, py + 3, T - 6, 2);
+  // handles + vents
+  g.fillStyle = '#8ea0bc';
+  g.fillRect(px + T / 2 - 5, py + T / 2 - 3, 2, 6); g.fillRect(px + T / 2 + 3, py + T / 2 - 3, 2, 6);
+  g.strokeStyle = 'rgba(160,180,210,0.25)';
+  for (let i = 0; i < 3; i++) {
+    g.beginPath(); g.moveTo(px + 7, py + 8 + i * 4); g.lineTo(px + T / 2 - 4, py + 8 + i * 4); g.stroke();
+    g.beginPath(); g.moveTo(px + T / 2 + 6, py + 8 + i * 4); g.lineTo(px + T - 7, py + 8 + i * 4); g.stroke();
+  }
+}
+function drawFloorArrows(g, px, py, T, r) {
+  // painted floor guidance arrows (industrial wayfinding)
+  const horiz = r < 0.5;
+  g.fillStyle = 'rgba(120,200,255,0.10)';
+  for (let i = 0; i < 2; i++) {
+    const o = i * 14 - 7;
+    g.beginPath();
+    if (horiz) {
+      g.moveTo(px + 8 + o, py + T / 2 - 6); g.lineTo(px + 20 + o, py + T / 2); g.lineTo(px + 8 + o, py + T / 2 + 6);
+      g.lineTo(px + 13 + o, py + T / 2);
+    } else {
+      g.moveTo(px + T / 2 - 6, py + 8 + o); g.lineTo(px + T / 2, py + 20 + o); g.lineTo(px + T / 2 + 6, py + 8 + o);
+      g.lineTo(px + T / 2, py + 13 + o);
+    }
+    g.closePath(); g.fill();
+  }
+}
 
 // hazard stripe border around evac tiles + floor paint
 function paintEvacPad(g, level, T) {
@@ -314,6 +370,102 @@ function paintEvacPad(g, level, T) {
       g.closePath(); g.fill();
     }
     g.restore();
+  }
+}
+
+// ---------- outer facility ring (fills the viewport beyond the map, edge-to-edge life) ----------
+function paintSurroundings(g, level, T, seed, pad) {
+  const { W, H } = level;
+  const mw = W * T, mh = H * T;
+  const x0 = -pad, y0 = -pad, x1 = mw + pad, y1 = mh + pad;
+  // base rooftop/compound ground
+  g.fillStyle = '#0d1220';
+  g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  const tx0 = Math.floor(x0 / T), ty0 = Math.floor(y0 / T);
+  const tx1 = Math.ceil(x1 / T), ty1 = Math.ceil(y1 / T);
+  for (let ty = ty0; ty < ty1; ty++) for (let tx = tx0; tx < tx1; tx++) {
+    if (tx >= 0 && ty >= 0 && tx < W && ty < H) continue; // inside map
+    const v = hash2(tx, ty, seed + 300);
+    const b = 15 + Math.floor(v * 7);
+    g.fillStyle = `rgb(${b},${b + 4},${b + 12})`;
+    g.fillRect(tx * T, ty * T, T, T);
+    // rooftop plate seams
+    g.strokeStyle = 'rgba(0,0,0,0.35)';
+    if (tx % 3 === 0) { g.beginPath(); g.moveTo(tx * T + 0.5, ty * T); g.lineTo(tx * T + 0.5, ty * T + T); g.stroke(); }
+    if (ty % 3 === 0) { g.beginPath(); g.moveTo(tx * T, ty * T + 0.5); g.lineTo(tx * T + T, ty * T + 0.5); g.stroke(); }
+    const r = hash2(tx, ty, seed + 310);
+    const px = tx * T, py = ty * T;
+    if (r < 0.05) { // AC unit
+      g.fillStyle = '#1a2233'; g.fillRect(px + 6, py + 6, T - 12, T - 12);
+      g.strokeStyle = 'rgba(120,140,170,0.3)'; g.strokeRect(px + 6.5, py + 6.5, T - 13, T - 13);
+      g.beginPath(); g.arc(px + T / 2, py + T / 2, 9, 0, 7); g.stroke();
+      for (let i = 0; i < 3; i++) {
+        const a = r * 40 + i * 2.1;
+        g.beginPath(); g.moveTo(px + T / 2, py + T / 2);
+        g.lineTo(px + T / 2 + Math.cos(a) * 8, py + T / 2 + Math.sin(a) * 8); g.stroke();
+      }
+    } else if (r < 0.085) { // vent block
+      g.fillStyle = '#141b2b'; g.fillRect(px + 8, py + 10, T - 16, T - 20);
+      g.strokeStyle = 'rgba(130,150,190,0.25)';
+      for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(px + 10, py + 10 + i * (T - 20) / 4); g.lineTo(px + T - 10, py + 10 + i * (T - 20) / 4); g.stroke(); }
+    } else if (r < 0.115) { // glowing skylight
+      const warm = hash2(tx, ty, seed + 311) < 0.5;
+      const col = warm ? '255,210,130' : '110,200,255';
+      g.fillStyle = `rgba(${col},0.10)`;
+      g.fillRect(px + 5, py + 5, T - 10, T - 10);
+      g.fillStyle = `rgba(${col},0.16)`;
+      g.fillRect(px + 8, py + 8, T - 16, T - 16);
+      g.strokeStyle = 'rgba(0,0,0,0.5)'; g.strokeRect(px + 5.5, py + 5.5, T - 11, T - 11);
+      g.beginPath(); g.moveTo(px + T / 2, py + 5); g.lineTo(px + T / 2, py + T - 5); g.stroke();
+      g.beginPath(); g.moveTo(px + 5, py + T / 2); g.lineTo(px + T - 5, py + T / 2); g.stroke();
+    } else if (r < 0.145) { // shipping container (compound yard)
+      const cc = hash2(tx, ty, seed + 312);
+      g.fillStyle = cc < 0.33 ? '#35262a' : cc < 0.66 ? '#22303a' : '#2e2b22';
+      g.fillRect(px + 3, py + 7, T - 6, T - 14);
+      g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(px + 3, py + 7, T - 6, 3);
+      g.strokeStyle = 'rgba(0,0,0,0.45)';
+      for (let i = 1; i < 5; i++) { g.beginPath(); g.moveTo(px + 3 + i * (T - 6) / 5, py + 7); g.lineTo(px + 3 + i * (T - 6) / 5, py + T - 7); g.stroke(); }
+    } else if (r < 0.18) { // pipe run
+      g.strokeStyle = '#1f2838'; g.lineWidth = 5;
+      g.beginPath(); g.moveTo(px, py + T / 2); g.lineTo(px + T, py + T / 2); g.stroke();
+      g.strokeStyle = 'rgba(150,175,210,0.22)'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(px, py + T / 2 - 1.5); g.lineTo(px + T, py + T / 2 - 1.5); g.stroke();
+      g.lineWidth = 1;
+    } else if (r < 0.20) { // blinking-style beacon dot (static bake, warm)
+      g.fillStyle = 'rgba(255,120,80,0.55)';
+      g.beginPath(); g.arc(px + T / 2, py + T / 2, 2.5, 0, 7); g.fill();
+    }
+  }
+  // perimeter security lane hugging the outer wall: hazard stripes + floodlight pools
+  g.save();
+  g.beginPath();
+  g.rect(-T * 0.9, -T * 0.9, mw + T * 1.8, mh + T * 1.8);
+  g.rect(0, 0, mw, mh);
+  g.clip('evenodd');
+  g.fillStyle = '#131a29';
+  g.fillRect(-T * 0.9, -T * 0.9, mw + T * 1.8, mh + T * 1.8);
+  g.fillStyle = 'rgba(255,205,60,0.10)';
+  for (let i = -pad; i < mw + pad; i += 26) {
+    g.beginPath();
+    g.moveTo(i, -T * 0.9); g.lineTo(i + 10, -T * 0.9); g.lineTo(i + 10 - 14, -T * 0.9 + 14); g.lineTo(i - 14, -T * 0.9 + 14);
+    g.closePath(); g.fill();
+    g.beginPath();
+    g.moveTo(i, mh + T * 0.9 - 14); g.lineTo(i + 10, mh + T * 0.9 - 14); g.lineTo(i + 10 - 14, mh + T * 0.9); g.lineTo(i - 14, mh + T * 0.9);
+    g.closePath(); g.fill();
+  }
+  g.restore();
+  // floodlight pools washing outward from the facility corners + edges
+  const pools = [];
+  for (let x = 0; x <= W; x += 7) { pools.push([x * T, -T * 0.5]); pools.push([x * T, mh + T * 0.5]); }
+  for (let y = 0; y <= H; y += 5) { pools.push([-T * 0.5, y * T]); pools.push([mw + T * 0.5, y * T]); }
+  for (const [lx, ly] of pools) {
+    const warm = hash2(Math.round(lx), Math.round(ly), seed + 320) < 0.6;
+    const col = warm ? '255,235,180' : '170,215,255';
+    const grd = g.createRadialGradient(lx, ly, 3, lx, ly, 2.6 * T);
+    grd.addColorStop(0, `rgba(${col},0.12)`);
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.beginPath(); g.arc(lx, ly, 2.6 * T, 0, 7); g.fill();
   }
 }
 
@@ -337,12 +489,18 @@ function placeLamps(level, T, seed) {
 // ---------- main builder ----------
 export function buildLevelArt(level, missionIdx, T) {
   const { W, H, tiles } = level;
+  // pad = extra baked scenery around the map so wide viewports never show void
+  const pad = Math.ceil(Math.max(window.innerWidth || 1920, window.innerHeight || 1080, 1920) / 2 / T) * T + T;
   const cv = document.createElement('canvas');
-  cv.width = W * T; cv.height = H * T;
+  cv.width = W * T + pad * 2; cv.height = H * T + pad * 2;
   const g = cv.getContext('2d');
+  g.translate(pad, pad);
   const seed = missionIdx * 7919 + W * 31 + H * 17;
   const { region } = buildRegions(level);
   const styleOf = (r) => Math.floor(hash2(r * 13 + 7, missionIdx, seed + 1) * 3); // 0 metal 1 concrete 2 server
+
+  // living facility surroundings beyond the map bounds (edge-to-edge density)
+  paintSurroundings(g, level, T, seed, pad);
 
   // floors
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -366,23 +524,26 @@ export function buildLevelArt(level, missionIdx, T) {
   for (const t of level.terms) mark(t.x, t.y);
   for (const e of level.evac) mark(e.x, e.y);
 
-  // decals (anywhere on plain floor)
+  // decals (anywhere on plain floor) — dense living floor
   for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
     if (tiles[y][x] !== '.') continue;
     const r = hash2(x, y, seed + 100);
-    if (r < 0.025) drawGrate(g, x * T, y * T, T);
-    else if (r < 0.06) drawStain(g, x * T, y * T, T, hash2(x, y, seed + 101));
-    else if (r < 0.075) drawCable(g, x * T, y * T, T, hash2(x, y, seed + 102));
+    if (r < 0.035) drawGrate(g, x * T, y * T, T);
+    else if (r < 0.09) drawStain(g, x * T, y * T, T, hash2(x, y, seed + 101));
+    else if (r < 0.115) drawCable(g, x * T, y * T, T, hash2(x, y, seed + 102));
+    else if (r < 0.13) drawFloorArrows(g, x * T, y * T, T, hash2(x, y, seed + 103));
   }
-  // props hug walls
+  // props hug walls — much denser: the base must feel lived-in edge to edge
   const nearWall = (x, y) => tiles[y - 1][x] === '#' || tiles[y + 1][x] === '#' || tiles[y][x - 1] === '#' || tiles[y][x + 1] === '#';
   for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
     if (tiles[y][x] !== '.' || reserved.has(y * W + x) || !nearWall(x, y)) continue;
     const r = hash2(x, y, seed + 200);
-    if (r < 0.05) drawDesk(g, x * T, y * T, T, hash2(x, y, seed + 201));
-    else if (r < 0.075) drawPlant(g, x * T, y * T, T, hash2(x, y, seed + 202));
-    else if (r < 0.105) drawBarrel(g, x * T, y * T, T, hash2(x, y, seed + 203));
-    else if (r < 0.125) drawPallet(g, x * T, y * T, T);
+    if (r < 0.09) drawDesk(g, x * T, y * T, T, hash2(x, y, seed + 201));
+    else if (r < 0.14) drawServerRack(g, x * T, y * T, T, hash2(x, y, seed + 205));
+    else if (r < 0.18) drawPlant(g, x * T, y * T, T, hash2(x, y, seed + 202));
+    else if (r < 0.23) drawBarrel(g, x * T, y * T, T, hash2(x, y, seed + 203));
+    else if (r < 0.27) drawLocker(g, x * T, y * T, T, hash2(x, y, seed + 206));
+    else if (r < 0.31) drawPallet(g, x * T, y * T, T);
   }
 
   // crates
@@ -412,13 +573,14 @@ export function buildLevelArt(level, missionIdx, T) {
     g.beginPath(); g.arc(l.x, l.y, 3.2, 0, 7); g.fill();
     g.restore();
   }
-  return { canvas: cv, lamps };
+  return { canvas: cv, lamps, pad };
 }
 
 // ---------- shared overlays (screen space) ----------
 let scanCv = null, vignCv = null;
 export function getScanlines(W, H) {
-  if (!scanCv) {
+  W = Math.ceil(W); H = Math.ceil(H);
+  if (!scanCv || scanCv.width !== W || scanCv.height !== H) {
     scanCv = document.createElement('canvas'); scanCv.width = W; scanCv.height = H;
     const g = scanCv.getContext('2d');
     g.fillStyle = 'rgba(0,0,0,0.10)';
@@ -427,11 +589,12 @@ export function getScanlines(W, H) {
   return scanCv;
 }
 export function getVignette(W, H) {
-  if (!vignCv) {
+  W = Math.ceil(W); H = Math.ceil(H);
+  if (!vignCv || vignCv.width !== W || vignCv.height !== H) {
     vignCv = document.createElement('canvas'); vignCv.width = W; vignCv.height = H;
     const g = vignCv.getContext('2d');
-    const grd = g.createRadialGradient(W / 2, H / 2, H * 0.42, W / 2, H / 2, H * 0.95);
-    grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(0,0,10,0.55)');
+    const grd = g.createRadialGradient(W / 2, H / 2, H * 0.5, W / 2, H / 2, Math.hypot(W, H) * 0.62);
+    grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(0,0,10,0.42)');
     g.fillStyle = grd; g.fillRect(0, 0, W, H);
   }
   return vignCv;

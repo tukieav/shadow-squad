@@ -6,7 +6,7 @@ const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
 const errors = [];
 page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
-await page.goto('http://localhost:8522/?debug=1', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:8532/?debug=1', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1500);
 await page.screenshot({ path: `shots/${shot}-menu.png` });
 // briefing: click mission 1 tile

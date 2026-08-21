@@ -4,7 +4,7 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome'
 const page = await browser.newPage();
 page.on('pageerror', e => console.log('PAGEERR', e.message));
 page.on('console', m => { if (m.type() === 'error') console.log('CONSOLE', m.text()); });
-await page.goto('http://localhost:8522/?debug=1');
+await page.goto('http://localhost:8532/?debug=1');
 await page.waitForFunction(() => window.__astro && window.__astro.getState().state === 'menu');
 const st = () => page.evaluate(() => window.__astro.getState());
 // go to briefing mission 2 (assumes unlocked>=2 from previous run)

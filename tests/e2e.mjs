@@ -1,7 +1,7 @@
-// Shadow Squad e2e tests — Playwright + system Chrome, server on :8518
+// Shadow Squad e2e tests — Playwright + system Chrome, server on :8532
 import { chromium } from 'playwright';
 
-const URL = 'http://localhost:8518/?debug=1';
+const URL = 'http://localhost:8532/?debug=1';
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log('PASS', name); } else { fail++; console.log('FAIL', name); } };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -303,6 +303,81 @@ const bright = await page.evaluate(() => {
   return n;
 });
 ok('canvas renders pixels', bright > 50);
+
+// --- desktop-first viewport: canvas fills the full window (no letterbox bars) ---
+const vp = await page.evaluate(() => {
+  const c = document.getElementById('game');
+  const r = c.getBoundingClientRect();
+  const v = window.__astro.getViewport();
+  return { rw: r.width, rh: r.height, iw: window.innerWidth, ih: window.innerHeight, ...v };
+});
+ok('canvas fills window width', Math.abs(vp.rw - vp.iw) < 2);
+ok('canvas fills window height', Math.abs(vp.rh - vp.ih) < 2);
+ok('internal resolution matches window', Math.abs(vp.w - vp.iw) < 2 && Math.abs(vp.h - vp.ih) < 2);
+
+// --- edge-to-edge density: no pure-black bands at screen edges during gameplay ---
+await ev(() => { window.__astro.setUnlocked(10); window.__astro.setMission(0); });
+await sleep(700);
+const edges = await page.evaluate(() => {
+  const c = document.getElementById('game');
+  const g = c.getContext('2d');
+  const bandDark = (x, y, w, h) => {
+    const d = g.getImageData(x, y, w, h).data;
+    let lit = 0, tot = 0;
+    for (let i = 0; i < d.length; i += 16) { tot++; if (d[i] + d[i + 1] + d[i + 2] > 24) lit++; }
+    return lit / tot;
+  };
+  return {
+    left: bandDark(0, 0, 40, c.height),
+    right: bandDark(c.width - 40, 0, 40, c.height),
+    top: bandDark(0, 0, c.width, 40),
+    bottom: bandDark(0, c.height - 40, c.width, 40),
+  };
+});
+ok('left edge alive (no black bar)', edges.left > 0.25);
+ok('right edge alive (no black bar)', edges.right > 0.25);
+ok('top edge alive (no black bar)', edges.top > 0.25);
+ok('bottom edge alive (no black bar)', edges.bottom > 0.25);
+
+// --- wide screens (>=1180px) show the tactical side panel ---
+ok('side panel visible on wide viewport', (await page.evaluate(() => window.__astro.getViewport())).sidePanel === true);
+
+// --- softer failure: early-mission catch gives a CLOSE CALL grace, not instant fail ---
+await ev(() => window.__astro.setMission(0));
+await sleep(400);
+let graceSurvived = false;
+// stand in front of the guard until the alarm trips (mission 1 detect time ~1.6s)
+await ev(() => {
+  const gg = window.__astro.getState().guards[0];
+  window.__astro.teleport(0, Math.round(gg.x + Math.cos(gg.facing) * 3), Math.round(gg.y + Math.sin(gg.facing) * 3));
+});
+for (let i = 0; i < 40; i++) {
+  await sleep(150);
+  s = await st();
+  if (s.alarm === 2) break;
+  if (s.state !== 'playing') break;
+  // keep standing in the cone
+  await ev(() => {
+    const gg = window.__astro.getState().guards[0];
+    window.__astro.teleport(0, Math.round(gg.x + Math.cos(gg.facing) * 3), Math.round(gg.y + Math.sin(gg.facing) * 3));
+  });
+}
+// now let the chasing guard reach the agent -> should trigger grace, not fail
+for (let i = 0; i < 40; i++) {
+  await sleep(150);
+  s = await st();
+  if (s.state !== 'playing') break;
+  if (s.guards[0].stun > 0) { graceSurvived = true; break; }
+  await ev(() => {
+    const gg = window.__astro.getState().guards[0];
+    window.__astro.teleport(0, Math.round(gg.x), Math.round(gg.y));
+  });
+}
+ok('first catch in mission 1 = grace (still playing)', graceSurvived && s.state === 'playing');
+await ev(() => window.__astro.forceGameOver());
+await sleep(200);
+await ev(() => window.__astro.clickScreen(480, 570));
+await sleep(300);
 
 // screenshot for vision check
 await page.screenshot({ path: '/tmp/shadow-squad-menu.png' });

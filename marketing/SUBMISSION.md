@@ -37,6 +37,8 @@ FEATURES
 - Daily login streak bonus
 - Score system: time bonus, takedown bonus, and a GHOST bonus for zero alarms
 - Mission progress, stars, intel and unlocks saved across devices
+- Full-window desktop presentation: the facility fills your whole screen, with
+  a live tactical side panel (brief, objectives, threat board) on wide displays
 - Mouse + keyboard and full touch support
 
 HOW TO PLAY
