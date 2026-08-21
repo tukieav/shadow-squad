@@ -22,8 +22,8 @@ const ctx = canvas.getContext('2d');
 // Wide screens see MORE of the mission map; UI screens scale via a virtual 960x600 space.
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  GAME_W = Math.max(480, window.innerWidth);
-  GAME_H = Math.max(320, window.innerHeight);
+  GAME_W = Math.max(1, window.innerWidth);
+  GAME_H = Math.max(1, window.innerHeight);
   canvas.width = Math.round(GAME_W * DPR);
   canvas.height = Math.round(GAME_H * DPR);
   canvas.style.width = GAME_W + 'px';
@@ -31,7 +31,13 @@ function resize() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (level) clampCam();
 }
-window.addEventListener('resize', resize); resize();
+window.addEventListener('resize', resize);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+resize();
+// Some mobile browsers finalize the meta-viewport after the script executes.
+window.addEventListener('load', resize, { once: true });
+requestAnimationFrame(resize);
+setTimeout(resize, 120);
 
 // virtual UI space helpers (menus / dialogs designed at 960x600, scaled to fit)
 function uiOffset() {
@@ -77,6 +83,13 @@ let lastStats = null;
 let menuScroll = 0;
 let rmbDrag = null;
 let hoverGuard = -1;
+let paused = false;
+let pauseReason = '';
+let userMuted = false;
+let reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let tutorialStage = 0;
+let lastSafeCheckpoint = null;
+let safeCheckpointT = 0;
 
 // ---------- meta-progression (persisted) ----------
 let intel = 0;                                   // currency from stars
@@ -102,16 +115,20 @@ const SHOP_ITEMS = [
 function agentColor(kind) { const s = SKINS[skin] || SKINS.default; return kind === 'scout' ? s.scout : s.tech; }
 
 function loadMeta() {
-  intel = parseInt(SDK.loadData('intel', '0'), 10) || 0;
+  // v2 retains the old individual-key save format while bounding malformed values.
+  const number = (key, fallback = 0, max = 999999) => Math.max(0, Math.min(max, parseInt(SDK.loadData(key, String(fallback)), 10) || fallback));
+  intel = number('intel');
   try { stars = JSON.parse(SDK.loadData('stars', '{}')) || {}; } catch (e) { stars = {}; }
-  upgrades.emp = parseInt(SDK.loadData('up.emp', '0'), 10) || 0;
-  upgrades.hack = parseInt(SDK.loadData('up.hack', '0'), 10) || 0;
-  upgrades.sprint = parseInt(SDK.loadData('up.sprint', '0'), 10) || 0;
+  upgrades.emp = number('up.emp', 0, 1);
+  upgrades.hack = number('up.hack', 0, 1);
+  upgrades.sprint = number('up.sprint', 0, 1);
   skin = SDK.loadData('skin', 'default');
   if (!SKINS[skin]) skin = 'default';
   try { ownedSkins = JSON.parse(SDK.loadData('skins', '{"default":true}')) || { default: true }; } catch (e) { ownedSkins = { default: true }; }
   ownedSkins.default = true;
-  streak = parseInt(SDK.loadData('streak', '0'), 10) || 0;
+  streak = number('streak', 0, 3650);
+  userMuted = SDK.loadData('mute', '0') === '1';
+  SDK.saveData('meta.version', '2');
 }
 function saveMeta() {
   SDK.saveData('intel', intel);
@@ -121,6 +138,7 @@ function saveMeta() {
   SDK.saveData('up.sprint', upgrades.sprint);
   SDK.saveData('skin', skin);
   SDK.saveData('skins', JSON.stringify(ownedSkins));
+  SDK.saveData('mute', userMuted ? '1' : '0');
 }
 function totalStars() { let n = 0; for (const k in stars) n += stars[k]; return n; }
 function tickDailyStreak() {
@@ -278,7 +296,36 @@ function startMission(mi, opts = {}) {
   cam.x = agents[0].x - GAME_W / 2; cam.y = agents[0].y - GAME_H / 2;
   clampCam();
   state = 'playing';
+  tutorialStage = mi === 0 ? 0 : 4;
+  safeCheckpointT = 0;
+  lastSafeCheckpoint = makeCheckpoint();
+  if (opts.checkpoint) restoreCheckpoint(opts.checkpoint);
   SDK.gameplayStart();
+}
+
+function makeCheckpoint() {
+  if (!level || !agents.length) return null;
+  return {
+    agents: agents.map(a => ({ x: a.x, y: a.y, facing: a.facing })),
+    terminals: terminals.map(t => ({ progress: t.progress, done: t.done, doneAt: t.doneAt })),
+    hacked, missionTime, empCharges, graceUsed, tutorialStage,
+  };
+}
+
+function restoreCheckpoint(snapshot) {
+  if (!snapshot) return;
+  snapshot.agents.forEach((saved, i) => {
+    const a = agents[i];
+    if (!a) return;
+    a.x = saved.x; a.y = saved.y; a.facing = saved.facing; a.path = []; a.takedownTarget = -1;
+  });
+  terminals.forEach((t, i) => Object.assign(t, snapshot.terminals[i] || {}));
+  hacked = snapshot.hacked;
+  missionTime = snapshot.missionTime;
+  empCharges = snapshot.empCharges;
+  graceUsed = snapshot.graceUsed;
+  tutorialStage = snapshot.tutorialStage;
+  floats.push({ x: agents[activeAgent].x, y: agents[activeAgent].y - 30, t: 1.8, kind: 'text', text: 'LAST SAFE POSITION RESTORED', color: '#8dffc0' });
 }
 function hackTimeFor() { return HACK_TIME * (1 - upgrades.hack * 0.35); }
 // dynamic difficulty: missions 1-2 use narrower vision cones
@@ -338,6 +385,8 @@ const UI = {
   portraits: [{ x: 12, y: 12, w: 74, h: 74 }, { x: 94, y: 12, w: 74, h: 74 }],
 };
 function empBtnRect() { return { x: GAME_W - 92, y: GAME_H - 92, w: 78, h: 78 }; }
+function muteBtnRect() { return { x: GAME_W - 64, y: 14, w: 50, h: 44 }; }
+function mobileDeployRect() { return { x: 18, y: GAME_H - 74, w: Math.max(44, GAME_W - 36), h: 52 }; }
 function sidePanelRect() {
   if (GAME_W < 1180 || state !== 'playing') return null;
   return { x: GAME_W - 264, y: 76, w: 248, h: Math.min(430, GAME_H - 260) };
@@ -386,6 +435,7 @@ function doTakedown(gi) {
 }
 
 function spawnSpark(x, y, color) {
+  if (particles.length >= 360) return;
   const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 140;
   particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0.4 + Math.random() * 0.4, color });
 }
@@ -418,6 +468,12 @@ window.addEventListener('mouseup', () => { rmbDrag = null; });
 function handleTap(sx, sy, wx, wy) {
   if (adInProgress) return;
   if (state !== 'playing') {
+    if (state === 'menu' && GAME_W <= 500) {
+      const mb = mobileDeployRect();
+      if (sx >= mb.x && sx <= mb.x + mb.w && sy >= mb.y && sy <= mb.y + mb.h) {
+        missionIdx = Math.min(unlocked, MISSIONS.length) - 1; bonusEmp = 0; startMission(missionIdx); return;
+      }
+    }
     const u = toUI(sx, sy);
     if (state === 'menu') return menuTap(u.x, u.y);
     if (state === 'shop') return shopTap(u.x, u.y);
@@ -438,6 +494,10 @@ function handleTap(sx, sy, wx, wy) {
   // EMP button
   const b = empBtnRect();
   if (sx >= b.x && sx <= b.x + b.w && sy >= b.y && sy <= b.y + b.h) { tryEmp(); return; }
+  const mb = muteBtnRect();
+  if (sx >= mb.x && sx <= mb.x + mb.w && sy >= mb.y && sy <= mb.y + mb.h) {
+    userMuted = !userMuted; AUDIO.setMuted(userMuted || SDK.getMuteSetting()); saveMeta(); return;
+  }
   // side intel panel (wide screens) is not a move order
   const sp = sidePanelRect();
   if (sp && sx >= sp.x && sx <= sp.x + sp.w && sy >= sp.y && sy <= sp.y + sp.h) return;
@@ -474,6 +534,12 @@ window.addEventListener('keydown', (e) => {
   if (e.key === '1' && state === 'playing') { if (activeAgent !== 0) { activeAgent = 0; camFollow = true; AUDIO.switchSound(); } }
   if (e.key === '2' && state === 'playing') { if (activeAgent !== 1) { activeAgent = 1; camFollow = true; AUDIO.switchSound(); } }
   if ((e.key === 'r' || e.key === 'R') && state === 'playing') tryEmp();
+  const dirs = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+  if (state === 'playing' && dirs[e.key]) {
+    e.preventDefault();
+    const a = agents[activeAgent], [dx, dy] = dirs[e.key];
+    orderMove(a, a.x + dx * TILE, a.y + dy * TILE);
+  }
 });
 
 // touch: tap = move / all taps route through handleTap; double-tap portrait handled by same switch logic
@@ -484,6 +550,24 @@ canvas.addEventListener('touchstart', (e) => {
   const { sx, sy, wx, wy } = screenToWorld(t);
   handleTap(sx, sy, wx, wy);
 }, { passive: false });
+
+function setPaused(next, reason = '') {
+  if (paused === next) return;
+  paused = next; pauseReason = next ? reason : '';
+  if (next) { AUDIO.pauseAudio(); SDK.gameplayStop(); }
+  else {
+    lastT = performance.now(); accumulator = 0;
+    AUDIO.resumeAudio();
+    if (state === 'playing' && !adInProgress) SDK.gameplayStart();
+  }
+}
+window.addEventListener('blur', () => setPaused(true, 'focus'));
+window.addEventListener('focus', () => { if (!document.hidden && !adInProgress) setPaused(false); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) setPaused(true, 'hidden');
+  else if (!adInProgress) setPaused(false);
+});
+if (window.matchMedia) window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', e => { reducedMotion = e.matches; });
 
 // ---------- screens tap handlers ----------
 const menuButtons = [];
@@ -518,8 +602,8 @@ function briefingTap(sx, sy) {
     adInProgress = true;
     SDK.gameplayStop();
     SDK.requestAd('rewarded', {
-      onStart: () => AUDIO.setMuted(true),
-      onFinish: () => AUDIO.setMuted(SDK.getMuteSetting()),
+      onStart: () => { setPaused(true, 'ad'); AUDIO.setMuted(true); },
+      onFinish: () => { AUDIO.setMuted(userMuted || SDK.getMuteSetting()); setPaused(false); },
     }).then((ok) => {
       adInProgress = false;
       if (ok) { bonusEmp = 1; floats.push({ x: 0, y: 0, t: 0, kind: 'none' }); }
@@ -532,8 +616,8 @@ function completeTap(sx, sy) {
   if (lastStats && lastStats.intelGain > 0 && !lastStats.doubled && sx >= GAME_W / 2 - 130 && sx <= GAME_W / 2 + 130 && sy >= 530 && sy <= 572) {
     adInProgress = true;
     SDK.requestAd('rewarded', {
-      onStart: () => AUDIO.setMuted(true),
-      onFinish: () => AUDIO.setMuted(SDK.getMuteSetting()),
+      onStart: () => { setPaused(true, 'ad'); AUDIO.setMuted(true); },
+      onFinish: () => { AUDIO.setMuted(userMuted || SDK.getMuteSetting()); setPaused(false); },
     }).then((ok) => {
       adInProgress = false;
       if (ok) {
@@ -549,8 +633,8 @@ function completeTap(sx, sy) {
     const next = missionIdx + 1;
     adInProgress = true;
     SDK.requestAd('midgame', {
-      onStart: () => AUDIO.setMuted(true),
-      onFinish: () => AUDIO.setMuted(SDK.getMuteSetting()),
+      onStart: () => { setPaused(true, 'ad'); AUDIO.setMuted(true); },
+      onFinish: () => { AUDIO.setMuted(userMuted || SDK.getMuteSetting()); setPaused(false); },
     }).then(() => {
       adInProgress = false;
       bonusEmp = 0;
@@ -595,27 +679,18 @@ function failedTap(sx, sy) {
   if (sx >= GAME_W / 2 - 110 && sx <= GAME_W / 2 + 110 && sy >= 420 && sy <= 476) {
     adInProgress = true;
     SDK.requestAd('midgame', {
-      onStart: () => AUDIO.setMuted(true),
-      onFinish: () => AUDIO.setMuted(SDK.getMuteSetting()),
+      onStart: () => { setPaused(true, 'ad'); AUDIO.setMuted(true); },
+      onFinish: () => { AUDIO.setMuted(userMuted || SDK.getMuteSetting()); setPaused(false); },
     }).then(() => {
       adInProgress = false;
       startMission(missionIdx);
     });
     return;
   }
-  // rewarded: retry from checkpoint (terminal already hacked)
-  if (hacked && !checkpointUsed && sx >= GAME_W / 2 - 150 && sx <= GAME_W / 2 + 150 && sy >= 492 && sy <= 540) {
-    adInProgress = true;
-    SDK.requestAd('rewarded', {
-      onStart: () => AUDIO.setMuted(true),
-      onFinish: () => AUDIO.setMuted(SDK.getMuteSetting()),
-    }).then((ok) => {
-      adInProgress = false;
-      if (ok) {
-        checkpointUsed = true;
-        startMission(missionIdx, { fromCheckpoint: true, keepCheckpointUse: true });
-      }
-    });
+  // One free tactical reset per mission: retain the latest calm position/progress.
+  if (lastSafeCheckpoint && !checkpointUsed && sx >= GAME_W / 2 - 150 && sx <= GAME_W / 2 + 150 && sy >= 492 && sy <= 540) {
+    checkpointUsed = true;
+    startMission(missionIdx, { checkpoint: lastSafeCheckpoint, keepCheckpointUse: true });
     return;
   }
   // MENU
@@ -847,6 +922,13 @@ function update(dt) {
 
   for (const a of agents) updateAgent(a, dt);
   if (state !== 'playing') return;
+  // Mission one teaches by doing, never by blocking the player with a tutorial screen.
+  if (missionIdx === 0) {
+    if (tutorialStage === 0 && (agents[0].moving || agents[0].path.length)) tutorialStage = 1;
+    if (tutorialStage === 1 && isGrass(level, Math.floor(agents[0].x / TILE), Math.floor(agents[0].y / TILE))) tutorialStage = 2;
+    if (tutorialStage === 2 && activeAgent === 1) tutorialStage = 3;
+    if (tutorialStage === 3 && (agents[1].hacking || hacked)) tutorialStage = 4;
+  }
   guards.forEach((g, i) => updateGuard(g, i, dt));
   if (state !== 'playing') return;
 
@@ -921,6 +1003,13 @@ function update(dt) {
     clampCam();
   }
 
+  // A calm, non-moving moment is a safe reset point. Keep snapshots bounded to one.
+  safeCheckpointT += dt;
+  if (alarm === 0 && safeCheckpointT >= 1.5 && !agents.some(a => a.moving)) {
+    lastSafeCheckpoint = makeCheckpoint();
+    safeCheckpointT = 0;
+  }
+
   // particles etc.
   particles = particles.filter(p => (p.t -= dt) > 0);
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; }
@@ -928,6 +1017,10 @@ function update(dt) {
   for (const r of rings) { if (r.delay > 0) { r.delay -= dt; continue; } r.r += 220 * dt; r.a -= dt * 1.1; }
   footprints = footprints.filter(f => (f.t -= dt) > 0);
   floats = floats.filter(f => (f.t -= dt) > 0);
+  if (particles.length > 360) particles.length = 360;
+  if (rings.length > 48) rings.splice(0, rings.length - 48);
+  if (footprints.length > 120) footprints.splice(0, footprints.length - 120);
+  if (floats.length > 80) floats.splice(0, floats.length - 80);
   shake = Math.max(0, shake - dt * 18);
 }
 
@@ -1510,6 +1603,17 @@ function drawHUD() {
     ctx.strokeStyle = '#ff4455'; ctx.lineWidth = 2;
     roundRect(GAME_W / 2 - 137, 8, 274, 50, 5); ctx.stroke(); ctx.lineWidth = 1;
   }
+  // 50px visual mute target; it also respects the CrazyGames settings mute.
+  const mb = muteBtnRect();
+  drawPanel(mb.x, mb.y, mb.w, mb.h, { stroke: userMuted || SDK.getMuteSetting() ? '#66788c' : PAL.cyan });
+  ctx.fillStyle = userMuted || SDK.getMuteSetting() ? '#7b8798' : '#bdeeff'; ctx.font = '18px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(userMuted || SDK.getMuteSetting() ? '🔇' : '🔊', mb.x + mb.w / 2, mb.y + 29);
+  if (missionIdx === 0 && tutorialStage < 4) {
+    const hints = ['CLICK A FLOOR TO MOVE SCOUT', 'STEP INTO TALL GRASS TO HIDE', 'PRESS 2 OR TAP TECH', 'TECH HACKS FROM 3 TILES AWAY'];
+    drawPanel(GAME_W / 2 - 174, 66, 348, 31, { fill: 'rgba(8,18,29,0.9)', stroke: PAL.cyan });
+    ctx.fillStyle = '#c9f5ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(`FIELD CUE ${tutorialStage + 1}/4  ·  ${hints[tutorialStage]}`, GAME_W / 2, 86);
+  }
   // objective strip (bottom center) with icon
   drawPanel(GAME_W / 2 - 165, GAME_H - 36, 330, 28, {});
   const termLeft = terminals.filter(t => !t.done).length;
@@ -1624,7 +1728,7 @@ function drawSidePanel() {
 
 function drawWorld() {
   ctx.save();
-  if (shake > 0) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  if (shake > 0 && !reducedMotion) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
   drawTiles();
   // footprints
   for (const f of footprints) {
@@ -1635,6 +1739,7 @@ function drawWorld() {
     ctx.restore();
   }
   drawVisionCones();
+  drawIntentOverlay();
   // bodies
   for (const b of bodies) drawRobot(b.x, b.y, b.facing, { dead: true });
   // guards
@@ -1697,6 +1802,30 @@ function drawWorld() {
   ctx.restore();
 }
 
+// Planning cues are deliberately quiet: only the selected agent's route and the
+// next sentry segment are shown, so the facility remains readable rather than noisy.
+function drawIntentOverlay() {
+  const a = agents[activeAgent];
+  if (!a) return;
+  if (a.path.length) {
+    ctx.save();
+    ctx.strokeStyle = agentColor(a.kind); ctx.globalAlpha = 0.58; ctx.lineWidth = 2;
+    ctx.setLineDash([7, 6]); ctx.beginPath(); ctx.moveTo(a.x - cam.x, a.y - cam.y);
+    for (const node of a.path.slice(0, 14)) ctx.lineTo((node.x + 0.5) * TILE - cam.x, (node.y + 0.5) * TILE - cam.y);
+    ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+  }
+  ctx.save(); ctx.globalAlpha = 0.34; ctx.strokeStyle = '#ffbd58'; ctx.fillStyle = '#ffcf78'; ctx.lineWidth = 1.4;
+  for (const g of guards) {
+    if (!g.alive || g.state === 'chase') continue;
+    const wp = g.wps[g.wpi];
+    const x1 = g.x - cam.x, y1 = g.y - cam.y, x2 = (wp[0] + 0.5) * TILE - cam.x, y2 = (wp[1] + 0.5) * TILE - cam.y;
+    ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - Math.cos(ang - 0.5) * 7, y2 - Math.sin(ang - 0.5) * 7); ctx.lineTo(x2 - Math.cos(ang + 0.5) * 7, y2 - Math.sin(ang + 0.5) * 7); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawBackdrop() {
   const bg = ctx.createLinearGradient(0, 0, 0, GAME_H);
   bg.addColorStop(0, '#04060c'); bg.addColorStop(1, '#080d18');
@@ -1742,7 +1871,7 @@ function drawStars(cx, cy, n, size = 10, dim = '#2c3648', animT = -1) {
 }
 
 function drawScreenFx(strength = 1) {
-  ctx.globalAlpha = 0.5 * strength;
+  ctx.globalAlpha = (reducedMotion ? 0.18 : 0.5) * strength;
   ctx.drawImage(ART.getScanlines(GAME_W, GAME_H), 0, 0);
   ctx.globalAlpha = strength;
   ctx.drawImage(ART.getVignette(GAME_W, GAME_H), 0, 0);
@@ -1843,23 +1972,12 @@ function drawMenu() {
   drawButton(GAME_W / 2 - 130, 348, 260, 50, '▶ DEPLOY: OP ' + String(qm).padStart(2, '0'), { font: 17 });
   ctx.fillStyle = '#4d586c'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
   ctx.fillText('· SELECT ANY UNLOCKED OP ABOVE — REPLAY FOR 3★ ·', GAME_W / 2, 420);
-  // how to play — terminal card
-  const hx = GAME_W / 2 - 300;
-  drawPanel(hx - 16, 436, 632, 138, {});
-  ctx.textAlign = 'left';
-  let hy = 458;
-  ctx.fillStyle = PAL.cyan; ctx.font = 'bold 12px monospace';
-  ctx.fillText('> FIELD MANUAL', hx, hy); hy += 20;
-  ctx.fillStyle = '#7c93a8'; ctx.font = '12px monospace';
-  const lines = [
-    'CLICK/TAP to move · keys 1 & 2 (or portraits) switch agents',
-    'SCOUT: silent takedowns from behind · TECH: remote hacks + EMP [R]',
-    'Avoid vision cones (sentries AND cameras) · grass conceals you',
-    'Hack every terminal, then get BOTH agents to the evac pad',
-    'Earn ★ for par time & ghost runs → spend INTEL in the shop',
-  ];
-  for (const l of lines) { ctx.fillText(l, hx, hy); hy += 19; }
-  ctx.textAlign = 'center';
+  // Keep the first screen focused on deployment; contextual field cues teach in play.
+  drawPanel(GAME_W / 2 - 300, 446, 600, 48, {});
+  ctx.fillStyle = '#9ccfe5'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('CLICK / TAP TO COMMAND  ·  1 / 2 SWITCH AGENTS  ·  ARROWS NUDGE  ·  [R] EMP', GAME_W / 2, 468);
+  ctx.fillStyle = '#667f95'; ctx.font = '11px monospace';
+  ctx.fillText('DEPLOY NOW — THE FIRST OP TEACHES COVER, SWITCHING, AND REMOTE HACKING IN PLAY.', GAME_W / 2, 486);
   // daily bonus toast
   if (dailyToastT > 0) {
     ctx.globalAlpha = Math.min(1, dailyToastT);
@@ -1869,6 +1987,10 @@ function drawMenu() {
     ctx.globalAlpha = 1;
   }
   endUI();
+  if (canvas.clientWidth <= 500) {
+    const mb = mobileDeployRect();
+    drawButton(mb.x, mb.y, mb.w, mb.h, `▶ DEPLOY: OP ${String(qm).padStart(2, '0')}`, { font: 16 });
+  }
   drawScreenFx(0.6);
 }
 
@@ -2053,8 +2175,8 @@ function drawFailed() {
   ctx.fillStyle = '#7fb8d8'; ctx.font = '13px monospace';
   ctx.fillText(tips[missionIdx % tips.length], GAME_W / 2, 240);
   drawButton(GAME_W / 2 - 110, 420, 220, 56, '↻ TRY AGAIN', { font: 15 });
-  if (hacked && !checkpointUsed) {
-    drawButton(GAME_W / 2 - 150, 492, 300, 48, '▶ RETRY FROM CHECKPOINT (AD)', { color: 'rgba(44,26,66,0.95)', stroke: '#b385ff', font: 13 });
+  if (lastSafeCheckpoint && !checkpointUsed) {
+    drawButton(GAME_W / 2 - 150, 492, 300, 48, '↺ RESET TO LAST SAFE POSITION', { color: 'rgba(16,55,43,0.95)', stroke: '#57e08a', font: 13 });
   }
   drawButton(GAME_W / 2 - 70, 552, 140, 38, 'MENU', { color: 'rgba(20,26,38,0.95)', stroke: '#5a7088', font: 13 });
   }
@@ -2079,12 +2201,20 @@ function render() {
 
 // ---------- main loop ----------
 let lastT = performance.now();
+let accumulator = 0;
+const FIXED_STEP = 1 / 120;
 function loop(now) {
-  const dt = Math.min(0.05, (now - lastT) / 1000);
+  const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
   if (state !== lastStateName) { lastStateName = state; stateT = 0; briefSkip = false; }
-  stateT += dt;
-  update(dt);
+  if (!paused) {
+    accumulator = Math.min(accumulator + dt, FIXED_STEP * 12);
+    while (accumulator >= FIXED_STEP) {
+      stateT += FIXED_STEP;
+      update(FIXED_STEP);
+      accumulator -= FIXED_STEP;
+    }
+  }
   render();
   requestAnimationFrame(loop);
 }
@@ -2096,8 +2226,8 @@ async function boot() {
   unlocked = Math.max(1, Math.min(MISSIONS.length, parseInt(SDK.loadData('unlocked', '1'), 10) || 1));
   loadMeta();
   tickDailyStreak();
-  AUDIO.setMuted(SDK.getMuteSetting());
-  SDK.onSettingsChange((s) => { if (s && typeof s.muteAudio === 'boolean') AUDIO.setMuted(s.muteAudio); });
+  AUDIO.setMuted(userMuted || SDK.getMuteSetting());
+  SDK.onSettingsChange((s) => { if (s && typeof s.muteAudio === 'boolean') AUDIO.setMuted(userMuted || s.muteAudio); });
   state = 'menu';
   SDK.loadingStop();
   requestAnimationFrame(loop);
@@ -2125,6 +2255,15 @@ if (new URLSearchParams(location.search).get('debug') === '1') {
     },
     getViewport: () => ({ w: GAME_W, h: GAME_H, dpr: DPR, canvasW: canvas.width, canvasH: canvas.height, artPad: levelArt ? levelArt.pad : 0, sidePanel: !!sidePanelRect() }),
     tryEmp: () => tryEmp(),
+    simulateAtHz: (hz, seconds = 12) => {
+      startMission(0);
+      let carry = 0;
+      for (let i = 0; i < Math.round(hz * seconds); i++) {
+        carry += 1 / hz;
+        while (carry + 1e-10 >= FIXED_STEP) { update(FIXED_STEP); carry -= FIXED_STEP; }
+      }
+      return { missionTime, guard: guards.map(g => ({ x: g.x, y: g.y, facing: g.facing, wpi: g.wpi })), alarm, hacked };
+    },
     getState: () => {
       const a = agents[activeAgent];
       const firstTerm = terminals.find(t => !t.done) || terminals[0];
@@ -2140,6 +2279,7 @@ if (new URLSearchParams(location.search).get('debug') === '1') {
         terminals: terminals.map(t => ({ x: t.x, y: t.y, done: t.done, progress: t.progress })),
         cameras: cameras.map(c => ({ x: c.x / TILE, y: c.y / TILE, facing: c.facing, stun: c.stun })),
         intel, stars: { ...stars }, upgrades: { ...upgrades }, skin, ownedSkins: { ...ownedSkins }, streak,
+        tutorialStage, checkpointUsed, paused, counts: { particles: particles.length, rings: rings.length, footprints: footprints.length, floats: floats.length, guards: guards.length, cameras: cameras.length },
         missionCount: MISSIONS.length,
       };
     },

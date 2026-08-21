@@ -6,7 +6,10 @@
   "private": true,
   "scripts": {
     "build": "esbuild src/main.js --bundle --minify --outfile=dist/bundle.js && node scripts/pack.mjs",
-    "dev": "esbuild src/main.js --bundle --outfile=dist/bundle.js --watch --servedir=dist"
+    "dev": "esbuild src/main.js --bundle --outfile=dist/bundle.js --watch --servedir=dist",
+    "test:viewport": "node tests/hardening-viewport.mjs",
+    "test:refresh": "node tests/hardening-refresh.mjs",
+    "test:soak": "node tools/e2e-soak.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
