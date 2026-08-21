@@ -1,0 +1,11 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true });
+const p = await b.newPage({ viewport: { width: 1920, height: 1080 } });
+await p.goto('https://tukieav.github.io/shadow-squad/?debug=1');
+await p.waitForFunction(() => window.__astro && window.__astro.getState().state === 'menu', null, { timeout: 20000 });
+await p.evaluate(() => window.__astro.startMission(0));
+await new Promise(r => setTimeout(r, 900));
+const v = await p.evaluate(() => window.__astro.getViewport());
+console.log(JSON.stringify(v));
+console.log(v.w === 1920 && v.h === 1080 && v.sidePanel ? 'FULLSCREEN+PANEL OK' : 'FAIL');
+await b.close();
