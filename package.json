@@ -9,7 +9,8 @@
     "dev": "esbuild src/main.js --bundle --outfile=dist/bundle.js --watch --servedir=dist",
     "test:viewport": "node tests/hardening-viewport.mjs",
     "test:refresh": "node tests/hardening-refresh.mjs",
-    "test:soak": "node tools/e2e-soak.mjs"
+    "test:soak": "node tools/e2e-soak.mjs",
+    "test:polish": "node tests/final-polish.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
