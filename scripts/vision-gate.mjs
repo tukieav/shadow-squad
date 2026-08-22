@@ -2,6 +2,7 @@
 // (menu, mission 1 first minute, alarm, fail screen) for manual/vision QA.
 import { chromium } from 'playwright';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const base = process.env.BASE_URL || 'http://localhost:8532';
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true });
 
 for (const [w, h] of [[1280, 720], [1920, 1080]]) {
@@ -10,7 +11,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]]) {
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error' && !m.text().includes('HTML5 SDK')) errors.push('CONSOLE: ' + m.text()); });
-  await page.goto('http://localhost:8532/?debug=1', { waitUntil: 'networkidle' });
+  await page.goto(`${base}/?debug=1`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__astro && window.__astro.getState().state === 'menu', null, { timeout: 15000 });
   await sleep(800);
   await page.screenshot({ path: `shots/gate-${tag}-menu.png` });
