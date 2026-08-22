@@ -2005,9 +2005,32 @@ function drawScreenFx(strength = 1) {
   ctx.globalAlpha = 1;
 }
 
+// The mission menu carries the cover's daylight-blue tactical energy forward.
+// This is intentionally menu-only: playable facilities keep their stealth lighting.
+function drawMenuAtmosphere(now) {
+  const wash = ctx.createLinearGradient(0, 0, GAME_W, GAME_H);
+  wash.addColorStop(0, 'rgba(36,151,241,0.85)');
+  wash.addColorStop(0.48, 'rgba(47,102,220,0.68)');
+  wash.addColorStop(1, 'rgba(123,72,210,0.70)');
+  ctx.fillStyle = wash; ctx.fillRect(0, 0, GAME_W, GAME_H);
+  const glow = ctx.createRadialGradient(GAME_W * 0.5, GAME_H * 0.09, 8, GAME_W * 0.5, GAME_H * 0.09, GAME_W * 0.54);
+  glow.addColorStop(0, 'rgba(237,254,255,0.72)'); glow.addColorStop(0.24, 'rgba(116,229,255,0.42)'); glow.addColorStop(1, 'rgba(86,221,255,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, GAME_W, GAME_H);
+  ctx.save(); ctx.globalCompositeOperation = 'screen';
+  const sweep = (now / 1850) % 1;
+  const beam = ctx.createLinearGradient(-GAME_W * 0.18, 0, GAME_W * 0.75, 0);
+  beam.addColorStop(0, 'rgba(229,255,255,0)'); beam.addColorStop(0.38, 'rgba(185,248,255,0.22)'); beam.addColorStop(1, 'rgba(229,255,255,0)');
+  ctx.translate(GAME_W * (0.10 + sweep * 0.24), -GAME_H * 0.10); ctx.rotate(0.32); ctx.fillStyle = beam; ctx.fillRect(-GAME_W * 0.20, 0, GAME_W * 1.25, GAME_H * 0.22);
+  ctx.restore();
+  ctx.save(); ctx.fillStyle = 'rgba(196,247,255,0.46)';
+  for (let i = 0; i < 18; i++) { const x = (i * 137 + now * 0.025) % (GAME_W + 40) - 20; const y = 106 + (i * 71) % Math.max(120, GAME_H - 150); ctx.fillRect(x, y, 2, 2); }
+  ctx.restore();
+}
+
 function drawMenu() {
   const now = performance.now();
   drawBackdrop();
+  drawMenuAtmosphere(now);
   beginUI();
   const GAME_W = VW, GAME_H = VH;
   // radar sweep decor
@@ -2031,12 +2054,13 @@ function drawMenu() {
   ctx.strokeStyle = 'rgba(255,181,69,0.6)';
   for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(tx + i * 10 - 3, 28); ctx.lineTo(tx + i * 10 + 3, 28); ctx.stroke(); }
   ctx.restore();
-  ctx.font = '900 46px monospace';
-  ctx.fillStyle = 'rgba(53,224,255,0.14)';
-  ctx.fillText('SHADOW SQUAD', GAME_W / 2 + 2, 68);
+  ctx.font = '900 46px Arial Black, sans-serif';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(34,47,126,0.75)';
+  ctx.strokeText('SHADOW SQUAD', GAME_W / 2 + 3, 69);
   ctx.save();
-  ctx.shadowColor = 'rgba(53,224,255,0.8)'; ctx.shadowBlur = 22;
-  ctx.fillStyle = '#e8f8ff';
+  ctx.shadowColor = 'rgba(110,235,255,0.95)'; ctx.shadowBlur = 22;
+  ctx.fillStyle = '#effeff';
   ctx.fillText('SHADOW SQUAD', GAME_W / 2, 66);
   ctx.restore();
   ctx.strokeStyle = 'rgba(53,224,255,0.5)'; ctx.lineWidth = 1;

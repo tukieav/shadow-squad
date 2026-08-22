@@ -10,7 +10,8 @@
     "test:viewport": "node tests/hardening-viewport.mjs",
     "test:refresh": "node tests/hardening-refresh.mjs",
     "test:soak": "node tools/e2e-soak.mjs",
-    "test:polish": "node tests/final-polish.mjs"
+    "test:polish": "node tests/final-polish.mjs",
+    "test:cover-brightness": "node scripts/check-cover-brightness.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
