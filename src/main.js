@@ -421,7 +421,7 @@ function empBtnRect() { return { x: GAME_W - 92, y: GAME_H - 92, w: 78, h: 78 };
 function muteBtnRect() { return { x: GAME_W - 64, y: 14, w: 50, h: 44 }; }
 function mobileDeployRect() { return { x: 18, y: GAME_H - 74, w: Math.max(44, GAME_W - 36), h: 52 }; }
 function onboardingPanelRect() {
-  const w = Math.min(380, GAME_W - 28), h = 184;
+  const w = Math.min(380, GAME_W - 28), h = 210;
   return { x: (GAME_W - w) / 2, y: Math.max(96, (GAME_H - h) / 2 - 14), w, h };
 }
 function onboardingSkipRect() {
@@ -1225,6 +1225,20 @@ function drawTiles() {
       const sy = py - 12 + ((now / 25) % 14);
       ctx.fillStyle = `rgba(255,255,255,0.25)`; ctx.fillRect(px - 10, sy, 20, 1.5);
     }
+    // The terminal projects its own live breach state, keeping the action legible at a glance.
+    if (!done && t.progress > 0) {
+      const progress = Math.min(1, t.progress / hackTimeFor());
+      const hy = py - 31, hw = 42;
+      ctx.save(); ctx.shadowColor = '#35e0ff'; ctx.shadowBlur = 10;
+      ctx.fillStyle = 'rgba(8,37,54,0.78)';
+      ctx.beginPath(); ctx.moveTo(px - hw / 2, hy - 7); ctx.lineTo(px + hw / 2, hy - 7); ctx.lineTo(px + hw / 2 - 5, hy + 9); ctx.lineTo(px - hw / 2 + 5, hy + 9); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(100,230,255,0.85)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(px - hw / 2, hy - 7); ctx.lineTo(px + hw / 2, hy - 7); ctx.lineTo(px + hw / 2 - 5, hy + 9); ctx.lineTo(px - hw / 2 + 5, hy + 9); ctx.closePath(); ctx.stroke();
+      ctx.fillStyle = '#35e0ff'; ctx.fillRect(px - 15, hy + 2, 30 * progress, 3);
+      ctx.fillStyle = '#d8fbff'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(`UPLINK ${Math.round(progress * 100)}%`, px, hy - 11);
+      ctx.restore();
+    }
     // sync window countdown ring
     if (done && !hacked && level.mission.sync) {
       const rem = Math.max(0, level.mission.sync - (missionTime - (t.doneAt ?? 0)));
@@ -1474,12 +1488,21 @@ function drawAgent(a, active) {
   ctx.save();
   if (hidden) ctx.globalAlpha = 0.55;
   if (active) {
+    // A slow, concentric selection pulse keeps the commanded agent readable in a busy room.
+    const pulse = (now % 900) / 900;
+    ctx.save();
+    ctx.globalAlpha *= 0.5 * (1 - pulse);
+    ctx.strokeStyle = color; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.arc(x, y, 20 + pulse * 12, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+    ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = 9;
     ctx.strokeStyle = color; ctx.lineWidth = 2;
     ctx.setLineDash([6, 5]);
     ctx.beginPath(); ctx.arc(x, y, 18, now / 500, now / 500 + Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.beginPath(); ctx.arc(x, y, 15, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
   }
   ctx.translate(x, y);
   ctx.rotate(a.facing + Math.PI / 2);
@@ -1759,8 +1782,8 @@ function drawOnboarding() {
   keycap(kx, my - 14, 'W'); keycap(kx - 16, my + 13, 'A'); keycap(kx + 16, my + 13, 'D'); keycap(kx, my + 13, 'S');
   keycap(r.x + r.w * 0.67, my, '1'); keycap(r.x + r.w * 0.76, my, '2'); keycap(r.x + r.w * 0.85, my, 'E', PAL.amber);
   ctx.fillStyle = '#c9f5ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('CLICK / TAP OR WASD / ZQSD: COMMAND', r.x + r.w * 0.34, r.y + 112);
-  ctx.fillText('1 / 2: AGENTS  ·  E: EMP', r.x + r.w * 0.73, r.y + 112);
+  ctx.fillText('CLICK / TAP OR WASD / ZQSD: COMMAND', r.x + r.w / 2, r.y + 118);
+  ctx.fillText('1 / 2: AGENTS  ·  E: EMP', r.x + r.w / 2, r.y + 138);
   const skip = onboardingSkipRect();
   drawButton(skip.x, skip.y, skip.w, skip.h, 'SKIP', { color: 'rgba(20,31,45,0.96)', stroke: '#6f8fa9', font: 12 });
   ctx.fillStyle = '#6f8fa9'; ctx.font = '10px monospace'; ctx.fillText('BACKSPACE / ESC', r.x + r.w / 2, r.y + r.h - 8);
@@ -1998,8 +2021,16 @@ function drawMenu() {
   ctx.fillStyle = rg;
   ctx.beginPath(); ctx.moveTo(rx, ry); ctx.arc(rx, ry, 80, ra, ra + 0.6); ctx.closePath(); ctx.fill();
   ctx.restore();
-  // title
+  // Custom title masthead: a compact squad insignia and signal bars give the menu its own identity.
   ctx.textAlign = 'center';
+  const tx = GAME_W / 2;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(53,224,255,0.54)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(tx - 42, 18); ctx.lineTo(tx - 20, 18); ctx.lineTo(tx - 10, 28); ctx.lineTo(tx, 12); ctx.lineTo(tx + 10, 28); ctx.lineTo(tx + 20, 18); ctx.lineTo(tx + 42, 18); ctx.stroke();
+  ctx.fillStyle = '#35e0ff'; ctx.beginPath(); ctx.arc(tx, 12, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,181,69,0.6)';
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(tx + i * 10 - 3, 28); ctx.lineTo(tx + i * 10 + 3, 28); ctx.stroke(); }
+  ctx.restore();
   ctx.font = '900 46px monospace';
   ctx.fillStyle = 'rgba(53,224,255,0.14)';
   ctx.fillText('SHADOW SQUAD', GAME_W / 2 + 2, 68);
@@ -2010,6 +2041,8 @@ function drawMenu() {
   ctx.restore();
   ctx.strokeStyle = 'rgba(53,224,255,0.5)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(GAME_W / 2 - 250, 80); ctx.lineTo(GAME_W / 2 + 250, 80); ctx.stroke();
+  ctx.fillStyle = 'rgba(53,224,255,0.55)';
+  for (let x = GAME_W / 2 - 250; x <= GAME_W / 2 + 250; x += 18) ctx.fillRect(x, 78, 7, 3);
   ctx.fillStyle = PAL.amber; ctx.font = 'bold 12px monospace';
   ctx.fillText('// REAL-TIME TACTICS · TWO AGENTS · ZERO ALARMS //', GAME_W / 2, 96);
   // intel + streak (top-left)
