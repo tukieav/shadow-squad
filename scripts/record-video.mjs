@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const mode = process.argv[2] || 'landscape';
+const base = process.env.BASE_URL || 'http://localhost:8532';
 const size = mode === 'portrait' ? { width: 720, height: 1280 } : { width: 1280, height: 720 };
 const output = `marketing/video-${mode}.mp4`;
 const rawDir = mkdtempSync(join(tmpdir(), `shadow-squad-${mode}-`));
@@ -15,7 +16,7 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome'
 const context = await browser.newContext({ viewport: size, recordVideo: { dir: rawDir, size } });
 const page = await context.newPage();
 await page.route('**/crazygames-sdk-v3.js', route => route.fulfill({ status: 200, contentType: 'text/javascript', body: '' }));
-await page.goto('http://localhost:8532/?debug=1');
+await page.goto(`${base}/?debug=1`);
 await page.waitForFunction(() => window.__astro?.getState().state === 'menu');
 // Begin recording in a rich mission, never showing menu, ad, results, or failure.
 await page.evaluate(() => { window.__astro.setMission(3); window.__astro.clickWorld(10, 6); });

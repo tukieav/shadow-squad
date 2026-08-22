@@ -1,7 +1,7 @@
 // Shadow Squad e2e tests — Playwright + system Chrome, server on :8532
 import { chromium } from 'playwright';
 
-const URL = 'http://localhost:8532/?debug=1';
+const URL = (process.env.BASE_URL || 'http://localhost:8532') + '/?debug=1';
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log('PASS', name); } else { fail++; console.log('FAIL', name); } };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));

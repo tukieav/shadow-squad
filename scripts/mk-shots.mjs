@@ -1,8 +1,9 @@
 import { chromium } from 'playwright';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const base = process.env.BASE_URL || 'http://localhost:8532';
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-await page.goto('http://localhost:8532/?debug=1');
+await page.goto(`${base}/?debug=1`);
 await page.waitForFunction(() => window.__astro && window.__astro.getState().state === 'menu');
 await sleep(500);
 await page.screenshot({ path: 'marketing/screenshot-menu.png' });

@@ -299,7 +299,11 @@ function startMission(mi, opts = {}) {
   tutorialStage = mi === 0 ? 0 : 4;
   safeCheckpointT = 0;
   lastSafeCheckpoint = makeCheckpoint();
-  if (opts.checkpoint) restoreCheckpoint(opts.checkpoint);
+  if (opts.checkpoint) {
+    restoreCheckpoint(opts.checkpoint);
+    // Keep the in-memory safe point aligned with the restored world, too.
+    lastSafeCheckpoint = makeCheckpoint();
+  }
   SDK.gameplayStart();
 }
 
@@ -308,7 +312,14 @@ function makeCheckpoint() {
   return {
     agents: agents.map(a => ({ x: a.x, y: a.y, facing: a.facing })),
     terminals: terminals.map(t => ({ progress: t.progress, done: t.done, doneAt: t.doneAt })),
-    hacked, missionTime, empCharges, graceUsed, tutorialStage,
+    guards: guards.map(g => ({
+      x: g.x, y: g.y, wpi: g.wpi, facing: g.facing, detect: g.detect, stun: g.stun,
+      alive: g.alive, state: g.state, target: g.target && { ...g.target }, repath: g.repath,
+      path: g.path.map(node => ({ ...node })), seenBodies: [...g.seenBodies],
+    })),
+    cameras: cameras.map(c => ({ facing: c.facing, detect: c.detect, stun: c.stun })),
+    bodies: bodies.map(b => ({ ...b })),
+    hacked, missionTime, empCharges, graceUsed, tutorialStage, activeAgent, takedowns, alarmsRaised,
   };
 }
 
@@ -325,6 +336,23 @@ function restoreCheckpoint(snapshot) {
   empCharges = snapshot.empCharges;
   graceUsed = snapshot.graceUsed;
   tutorialStage = snapshot.tutorialStage;
+  activeAgent = Math.max(0, Math.min(agents.length - 1, snapshot.activeAgent ?? activeAgent));
+  takedowns = snapshot.takedowns ?? takedowns;
+  alarmsRaised = snapshot.alarmsRaised ?? alarmsRaised;
+  bodies = (snapshot.bodies || []).map(b => ({ ...b }));
+  snapshot.guards?.forEach((saved, i) => {
+    const g = guards[i];
+    if (!g) return;
+    g.x = saved.x; g.y = saved.y; g.wpi = saved.wpi; g.facing = saved.facing;
+    g.detect = saved.detect; g.stun = saved.stun; g.alive = saved.alive; g.state = saved.state;
+    g.target = saved.target && { ...saved.target }; g.repath = saved.repath;
+    g.path = (saved.path || []).map(node => ({ ...node }));
+    g.seenBodies = new Set(saved.seenBodies || []);
+  });
+  snapshot.cameras?.forEach((saved, i) => {
+    const c = cameras[i];
+    if (c) { c.facing = saved.facing; c.detect = saved.detect; c.stun = saved.stun; }
+  });
   floats.push({ x: agents[activeAgent].x, y: agents[activeAgent].y - 30, t: 1.8, kind: 'text', text: 'LAST SAFE POSITION RESTORED', color: '#8dffc0' });
 }
 function hackTimeFor() { return HACK_TIME * (1 - upgrades.hack * 0.35); }
@@ -387,6 +415,20 @@ const UI = {
 function empBtnRect() { return { x: GAME_W - 92, y: GAME_H - 92, w: 78, h: 78 }; }
 function muteBtnRect() { return { x: GAME_W - 64, y: 14, w: 50, h: 44 }; }
 function mobileDeployRect() { return { x: 18, y: GAME_H - 74, w: Math.max(44, GAME_W - 36), h: 52 }; }
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function hudLayout() {
+  const compact = GAME_W < 620;
+  const mute = muteBtnRect();
+  const mission = compact
+    ? { x: UI.portraits[1].x + UI.portraits[1].w + 8, y: 10, w: Math.max(54, mute.x - (UI.portraits[1].x + UI.portraits[1].w) - 16), h: 46 }
+    : { x: GAME_W / 2 - 135, y: 10, w: 270, h: 46 };
+  const cue = compact
+    ? { x: 12, y: UI.portraits[0].y + UI.portraits[0].h + 14, w: GAME_W - 24, h: 31 }
+    : { x: GAME_W / 2 - 174, y: 66, w: 348, h: 31 };
+  return { compact, mission, cue, mute };
+}
 function sidePanelRect() {
   if (GAME_W < 1180 || state !== 'playing') return null;
   return { x: GAME_W - 264, y: 76, w: 248, h: Math.min(430, GAME_H - 260) };
@@ -822,19 +864,23 @@ function updateGuard(g, gi, dt) {
   if (g.stun > 0) { g.stun -= dt; g.detect = Math.max(0, g.detect - dt); if (Math.random() < dt * 6) spawnSpark(g.x, g.y, '#7df'); return; }
 
   // vision: detect agents
-  let seeing = false;
+  let seenAgent = null;
   for (const a of agents) {
     if (agentHidden(a, g)) continue;
     if (guardSees(g, a.x, a.y)) {
-      seeing = true;
-      g.detect += dt;
-      if (alarm < 1) alarm = 1;
-      if (Math.random() < dt * 6) AUDIO.detectTick();
-      if (g.detect >= detectTimeFor()) raiseAlarm(a.x, a.y);
-      if (alarm === 2) { g.state = 'chase'; g.target = { x: a.x, y: a.y }; }
+      seenAgent = a;
+      break;
     }
   }
-  if (!seeing) g.detect = Math.max(0, g.detect - dt * 1.2);
+  if (seenAgent) {
+    // A sentry has one awareness meter. Seeing the whole squad is not a
+    // hidden multiplier on the published detection window.
+    g.detect += dt;
+    if (alarm < 1) alarm = 1;
+    if (Math.random() < dt * 6) AUDIO.detectTick();
+    if (g.detect >= detectTimeFor()) raiseAlarm(seenAgent.x, seenAgent.y);
+    if (alarm === 2) { g.state = 'chase'; g.target = { x: seenAgent.x, y: seenAgent.y }; }
+  } else g.detect = Math.max(0, g.detect - dt * 1.2);
 
   // bodies raise alarm
   for (let bi = 0; bi < bodies.length; bi++) {
@@ -1556,6 +1602,7 @@ function drawLighting() {
 
 function drawHUD() {
   const now = performance.now();
+  const layout = hudLayout();
   // agent portraits — military tags
   for (let i = 0; i < 2; i++) {
     const p = UI.portraits[i];
@@ -1588,20 +1635,21 @@ function drawHUD() {
     ctx.fillStyle = isActive ? col : '#3d4a5c'; ctx.font = '9px monospace';
     ctx.fillText(i === 0 ? '[1]' : '[2]', cx, p.y + 68);
   }
-  // mission readout (top center)
-  drawPanel(GAME_W / 2 - 135, 10, 270, 46, { brackets: 'rgba(53,224,255,0.35)' });
-  ctx.fillStyle = PAL.cyan; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
-  ctx.fillText(`OP ${String(missionIdx + 1).padStart(2, '0')} // ${level.mission.name}`, GAME_W / 2, 27);
-  ctx.fillStyle = PAL.amber; ctx.font = 'bold 12px monospace';
+  // Keep command portraits unobstructed on narrow touch screens.
+  const mr = layout.mission;
+  drawPanel(mr.x, mr.y, mr.w, mr.h, { brackets: 'rgba(53,224,255,0.35)' });
+  ctx.fillStyle = PAL.cyan; ctx.font = `bold ${layout.compact ? 10 : 13}px monospace`; ctx.textAlign = 'center';
+  ctx.fillText(layout.compact ? `OP ${String(missionIdx + 1).padStart(2, '0')} · ${level.mission.name}` : `OP ${String(missionIdx + 1).padStart(2, '0')} // ${level.mission.name}`, mr.x + mr.w / 2, 27);
+  ctx.fillStyle = PAL.amber; ctx.font = `bold ${layout.compact ? 10 : 12}px monospace`;
   const mm = Math.floor(missionTime / 60), ss = (missionTime % 60).toFixed(1).padStart(4, '0');
-  ctx.fillText(`T+${mm}:${ss}`, GAME_W / 2 - 42, 46);
+  ctx.fillText(`T+${mm}:${ss}`, layout.compact ? mr.x + mr.w * 0.3 : GAME_W / 2 - 42, 46);
   // threat readout
   const thrCol = alarm === 2 ? '#ff4455' : alarm === 1 ? '#ffcc44' : '#57e08a';
-  ctx.fillStyle = thrCol; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
-  ctx.fillText(alarm === 2 ? '▮▮▮ ALARM' : alarm === 1 ? '▮▮▯ WARY' : '▮▯▯ CALM', GAME_W / 2 + 8, 46);
+  ctx.fillStyle = thrCol; ctx.font = `bold ${layout.compact ? 9 : 10}px monospace`; ctx.textAlign = layout.compact ? 'center' : 'left';
+  ctx.fillText(alarm === 2 ? '▮▮▮ ALARM' : alarm === 1 ? '▮▮▯ WARY' : '▮▯▯ CALM', layout.compact ? mr.x + mr.w * 0.74 : GAME_W / 2 + 8, 46);
   if (alarm === 2 && Math.floor(now / 220) % 2) {
     ctx.strokeStyle = '#ff4455'; ctx.lineWidth = 2;
-    roundRect(GAME_W / 2 - 137, 8, 274, 50, 5); ctx.stroke(); ctx.lineWidth = 1;
+    roundRect(mr.x - 2, mr.y - 2, mr.w + 4, mr.h + 4, 5); ctx.stroke(); ctx.lineWidth = 1;
   }
   // 50px visual mute target; it also respects the CrazyGames settings mute.
   const mb = muteBtnRect();
@@ -1610,9 +1658,10 @@ function drawHUD() {
   ctx.fillText(userMuted || SDK.getMuteSetting() ? '🔇' : '🔊', mb.x + mb.w / 2, mb.y + 29);
   if (missionIdx === 0 && tutorialStage < 4) {
     const hints = ['CLICK A FLOOR TO MOVE SCOUT', 'STEP INTO TALL GRASS TO HIDE', 'PRESS 2 OR TAP TECH', 'TECH HACKS FROM 3 TILES AWAY'];
-    drawPanel(GAME_W / 2 - 174, 66, 348, 31, { fill: 'rgba(8,18,29,0.9)', stroke: PAL.cyan });
+    const cr = layout.cue;
+    drawPanel(cr.x, cr.y, cr.w, cr.h, { fill: 'rgba(8,18,29,0.9)', stroke: PAL.cyan });
     ctx.fillStyle = '#c9f5ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(`FIELD CUE ${tutorialStage + 1}/4  ·  ${hints[tutorialStage]}`, GAME_W / 2, 86);
+    ctx.fillText(`FIELD CUE ${tutorialStage + 1}/4  ·  ${hints[tutorialStage]}`, cr.x + cr.w / 2, cr.y + 20);
   }
   // objective strip (bottom center) with icon
   drawPanel(GAME_W / 2 - 165, GAME_H - 36, 330, 28, {});
@@ -2254,6 +2303,10 @@ if (new URLSearchParams(location.search).get('debug') === '1') {
       return handleTap(sx, sy, sx + cam.x, sy + cam.y);
     },
     getViewport: () => ({ w: GAME_W, h: GAME_H, dpr: DPR, canvasW: canvas.width, canvasH: canvas.height, artPad: levelArt ? levelArt.pad : 0, sidePanel: !!sidePanelRect() }),
+    getHudLayout: () => {
+      const h = hudLayout();
+      return { ...h, portraits: UI.portraits.map(p => ({ ...p })), portraitOverlap: UI.portraits.some(p => rectsOverlap(p, h.mission) || rectsOverlap(p, h.cue)) };
+    },
     tryEmp: () => tryEmp(),
     simulateAtHz: (hz, seconds = 12) => {
       startMission(0);
@@ -2275,7 +2328,7 @@ if (new URLSearchParams(location.search).get('debug') === '1') {
         agents: agents.map(ag => ({ x: ag.x / TILE, y: ag.y / TILE, kind: ag.kind })),
         alarm, hacked, hackProgress, empCharges, unlocked, adInProgress, bonusEmp,
         objective: { x: obj.x, y: obj.y },
-        guards: guards.map(g => ({ x: g.x / TILE, y: g.y / TILE, facing: g.facing, alerted: g.state === 'chase', alive: g.alive, stun: g.stun, elite: !!g.elite })),
+        guards: guards.map(g => ({ x: g.x / TILE, y: g.y / TILE, facing: g.facing, detect: g.detect, alerted: g.state === 'chase', alive: g.alive, stun: g.stun, elite: !!g.elite })),
         terminals: terminals.map(t => ({ x: t.x, y: t.y, done: t.done, progress: t.progress })),
         cameras: cameras.map(c => ({ x: c.x / TILE, y: c.y / TILE, facing: c.facing, stun: c.stun })),
         intel, stars: { ...stars }, upgrades: { ...upgrades }, skin, ownedSkins: { ...ownedSkins }, streak,
