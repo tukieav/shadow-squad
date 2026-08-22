@@ -88,6 +88,8 @@ let pauseReason = '';
 let userMuted = false;
 let reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let tutorialStage = 0;
+let onboardingSeen = false;
+let onboardingActive = false;
 let lastSafeCheckpoint = null;
 let safeCheckpointT = 0;
 
@@ -128,6 +130,7 @@ function loadMeta() {
   ownedSkins.default = true;
   streak = number('streak', 0, 3650);
   userMuted = SDK.loadData('mute', '0') === '1';
+  onboardingSeen = SDK.loadData('onboarding.seen', '0') === '1';
   SDK.saveData('meta.version', '2');
 }
 function saveMeta() {
@@ -296,7 +299,9 @@ function startMission(mi, opts = {}) {
   cam.x = agents[0].x - GAME_W / 2; cam.y = agents[0].y - GAME_H / 2;
   clampCam();
   state = 'playing';
-  tutorialStage = mi === 0 ? 0 : 4;
+  // The control card is a first-run aid, never a repeatable mission wall.
+  tutorialStage = 4;
+  onboardingActive = mi === 0 && !onboardingSeen;
   safeCheckpointT = 0;
   lastSafeCheckpoint = makeCheckpoint();
   if (opts.checkpoint) {
@@ -415,6 +420,20 @@ const UI = {
 function empBtnRect() { return { x: GAME_W - 92, y: GAME_H - 92, w: 78, h: 78 }; }
 function muteBtnRect() { return { x: GAME_W - 64, y: 14, w: 50, h: 44 }; }
 function mobileDeployRect() { return { x: 18, y: GAME_H - 74, w: Math.max(44, GAME_W - 36), h: 52 }; }
+function onboardingPanelRect() {
+  const w = Math.min(380, GAME_W - 28), h = 210;
+  return { x: (GAME_W - w) / 2, y: Math.max(96, (GAME_H - h) / 2 - 14), w, h };
+}
+function onboardingSkipRect() {
+  const r = onboardingPanelRect();
+  return { x: r.x + r.w / 2 - 68, y: r.y + r.h - 42, w: 136, h: 30 };
+}
+function finishOnboarding() {
+  if (!onboardingActive) return;
+  onboardingActive = false;
+  onboardingSeen = true;
+  SDK.saveData('onboarding.seen', '1');
+}
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
@@ -525,6 +544,16 @@ function handleTap(sx, sy, wx, wy) {
     return;
   }
 
+  if (onboardingActive) {
+    const skip = onboardingSkipRect();
+    if (sx >= skip.x && sx <= skip.x + skip.w && sy >= skip.y && sy <= skip.y + skip.h) {
+      finishOnboarding();
+      return;
+    }
+    // The first real command dismisses the card and still reaches the game.
+    finishOnboarding();
+  }
+
   // HUD portraits
   for (let i = 0; i < 2; i++) {
     const p = UI.portraits[i];
@@ -573,13 +602,24 @@ function handleTap(sx, sy, wx, wy) {
 
 window.addEventListener('keydown', (e) => {
   AUDIO.unlockAudio();
-  if (e.key === '1' && state === 'playing') { if (activeAgent !== 0) { activeAgent = 0; camFollow = true; AUDIO.switchSound(); } }
-  if (e.key === '2' && state === 'playing') { if (activeAgent !== 1) { activeAgent = 1; camFollow = true; AUDIO.switchSound(); } }
-  if ((e.key === 'r' || e.key === 'R') && state === 'playing') tryEmp();
-  const dirs = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
-  if (state === 'playing' && dirs[e.key]) {
+  // Physical key codes make 1/2, E and arrows layout-independent (AZERTY included).
+  if (state === 'playing' && onboardingActive && (e.code === 'Escape' || e.code === 'Backspace')) {
     e.preventDefault();
-    const a = agents[activeAgent], [dx, dy] = dirs[e.key];
+    finishOnboarding();
+    return;
+  }
+  if (state !== 'playing') return;
+  if (onboardingActive) finishOnboarding();
+  if (e.code === 'Digit1') { e.preventDefault(); if (activeAgent !== 0) { activeAgent = 0; camFollow = true; AUDIO.switchSound(); } }
+  if (e.code === 'Digit2') { e.preventDefault(); if (activeAgent !== 1) { activeAgent = 1; camFollow = true; AUDIO.switchSound(); } }
+  if (e.code === 'KeyE') { e.preventDefault(); tryEmp(); }
+  const dirs = {
+    ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+    KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0],
+  };
+  if (dirs[e.code]) {
+    e.preventDefault();
+    const a = agents[activeAgent], [dx, dy] = dirs[e.code];
     orderMove(a, a.x + dx * TILE, a.y + dy * TILE);
   }
 });
@@ -968,13 +1008,6 @@ function update(dt) {
 
   for (const a of agents) updateAgent(a, dt);
   if (state !== 'playing') return;
-  // Mission one teaches by doing, never by blocking the player with a tutorial screen.
-  if (missionIdx === 0) {
-    if (tutorialStage === 0 && (agents[0].moving || agents[0].path.length)) tutorialStage = 1;
-    if (tutorialStage === 1 && isGrass(level, Math.floor(agents[0].x / TILE), Math.floor(agents[0].y / TILE))) tutorialStage = 2;
-    if (tutorialStage === 2 && activeAgent === 1) tutorialStage = 3;
-    if (tutorialStage === 3 && (agents[1].hacking || hacked)) tutorialStage = 4;
-  }
   guards.forEach((g, i) => updateGuard(g, i, dt));
   if (state !== 'playing') return;
 
@@ -1191,6 +1224,20 @@ function drawTiles() {
       for (let i = 0; i < 3; i++) ctx.fillRect(px - 8, py - 10 + i * 4, 16 - ((Math.floor(now / 180) + i * 3) % 10), 2);
       const sy = py - 12 + ((now / 25) % 14);
       ctx.fillStyle = `rgba(255,255,255,0.25)`; ctx.fillRect(px - 10, sy, 20, 1.5);
+    }
+    // The terminal projects its own live breach state, keeping the action legible at a glance.
+    if (!done && t.progress > 0) {
+      const progress = Math.min(1, t.progress / hackTimeFor());
+      const hy = py - 31, hw = 42;
+      ctx.save(); ctx.shadowColor = '#35e0ff'; ctx.shadowBlur = 10;
+      ctx.fillStyle = 'rgba(8,37,54,0.78)';
+      ctx.beginPath(); ctx.moveTo(px - hw / 2, hy - 7); ctx.lineTo(px + hw / 2, hy - 7); ctx.lineTo(px + hw / 2 - 5, hy + 9); ctx.lineTo(px - hw / 2 + 5, hy + 9); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(100,230,255,0.85)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(px - hw / 2, hy - 7); ctx.lineTo(px + hw / 2, hy - 7); ctx.lineTo(px + hw / 2 - 5, hy + 9); ctx.lineTo(px - hw / 2 + 5, hy + 9); ctx.closePath(); ctx.stroke();
+      ctx.fillStyle = '#35e0ff'; ctx.fillRect(px - 15, hy + 2, 30 * progress, 3);
+      ctx.fillStyle = '#d8fbff'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(`UPLINK ${Math.round(progress * 100)}%`, px, hy - 11);
+      ctx.restore();
     }
     // sync window countdown ring
     if (done && !hacked && level.mission.sync) {
@@ -1441,12 +1488,21 @@ function drawAgent(a, active) {
   ctx.save();
   if (hidden) ctx.globalAlpha = 0.55;
   if (active) {
+    // A slow, concentric selection pulse keeps the commanded agent readable in a busy room.
+    const pulse = (now % 900) / 900;
+    ctx.save();
+    ctx.globalAlpha *= 0.5 * (1 - pulse);
+    ctx.strokeStyle = color; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.arc(x, y, 20 + pulse * 12, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+    ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = 9;
     ctx.strokeStyle = color; ctx.lineWidth = 2;
     ctx.setLineDash([6, 5]);
     ctx.beginPath(); ctx.arc(x, y, 18, now / 500, now / 500 + Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.beginPath(); ctx.arc(x, y, 15, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
   }
   ctx.translate(x, y);
   ctx.rotate(a.facing + Math.PI / 2);
@@ -1656,13 +1712,6 @@ function drawHUD() {
   drawPanel(mb.x, mb.y, mb.w, mb.h, { stroke: userMuted || SDK.getMuteSetting() ? '#66788c' : PAL.cyan });
   ctx.fillStyle = userMuted || SDK.getMuteSetting() ? '#7b8798' : '#bdeeff'; ctx.font = '18px sans-serif'; ctx.textAlign = 'center';
   ctx.fillText(userMuted || SDK.getMuteSetting() ? '🔇' : '🔊', mb.x + mb.w / 2, mb.y + 29);
-  if (missionIdx === 0 && tutorialStage < 4) {
-    const hints = ['CLICK A FLOOR TO MOVE SCOUT', 'STEP INTO TALL GRASS TO HIDE', 'PRESS 2 OR TAP TECH', 'TECH HACKS FROM 3 TILES AWAY'];
-    const cr = layout.cue;
-    drawPanel(cr.x, cr.y, cr.w, cr.h, { fill: 'rgba(8,18,29,0.9)', stroke: PAL.cyan });
-    ctx.fillStyle = '#c9f5ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(`FIELD CUE ${tutorialStage + 1}/4  ·  ${hints[tutorialStage]}`, cr.x + cr.w / 2, cr.y + 20);
-  }
   // objective strip (bottom center) with icon
   drawPanel(GAME_W / 2 - 165, GAME_H - 36, 330, 28, {});
   const termLeft = terminals.filter(t => !t.done).length;
@@ -1707,8 +1756,37 @@ function drawHUD() {
   }
   if (empCharges === 0) { ctx.fillStyle = '#445064'; ctx.font = '9px monospace'; ctx.fillText('EMPTY', bx, by + 12); }
   ctx.fillStyle = armed ? '#6f90a8' : '#3a4658'; ctx.font = '9px monospace';
-  ctx.fillText('[R]', bx, by + 24);
+  ctx.fillText('[E]', bx, by + 24);
   drawSidePanel();
+}
+
+function drawOnboarding() {
+  if (!onboardingActive) return;
+  const r = onboardingPanelRect();
+  ctx.fillStyle = 'rgba(2,7,14,0.58)'; ctx.fillRect(0, 0, GAME_W, GAME_H);
+  drawPanel(r.x, r.y, r.w, r.h, { fill: 'rgba(7,17,29,0.97)', stroke: PAL.cyan, brackets: 'rgba(53,224,255,0.8)' });
+  ctx.fillStyle = PAL.cyan; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('FIELD CONTROLS', r.x + r.w / 2, r.y + 22);
+  // Visual command card: pointer + physical WASD cluster and compact action keys.
+  const my = r.y + 62, mx = r.x + r.w * 0.16;
+  ctx.save(); ctx.shadowColor = 'rgba(53,224,255,0.75)'; ctx.shadowBlur = 10;
+  ctx.strokeStyle = PAL.cyan; ctx.lineWidth = 2;
+  roundRect(mx - 16, my - 12, 32, 24, 5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(mx - 4, my - 6); ctx.lineTo(mx + 7, my); ctx.lineTo(mx + 1, my + 2); ctx.lineTo(mx + 5, my + 9); ctx.lineTo(mx + 1, my + 11); ctx.lineTo(mx - 4, my + 4); ctx.lineTo(mx - 9, my + 8); ctx.closePath(); ctx.fillStyle = '#d9f8ff'; ctx.fill();
+  ctx.restore();
+  const keycap = (x, y, label, col = PAL.cyan) => {
+    drawPanel(x - 14, y - 12, 28, 24, { fill: 'rgba(13,31,46,0.95)', stroke: col });
+    ctx.fillStyle = '#eaf6ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.fillText(label, x, y + 4);
+  };
+  const kx = r.x + r.w * 0.41;
+  keycap(kx, my - 14, 'W'); keycap(kx - 16, my + 13, 'A'); keycap(kx + 16, my + 13, 'D'); keycap(kx, my + 13, 'S');
+  keycap(r.x + r.w * 0.67, my, '1'); keycap(r.x + r.w * 0.76, my, '2'); keycap(r.x + r.w * 0.85, my, 'E', PAL.amber);
+  ctx.fillStyle = '#c9f5ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('CLICK / TAP OR WASD / ZQSD: COMMAND', r.x + r.w / 2, r.y + 118);
+  ctx.fillText('1 / 2: AGENTS  ·  E: EMP', r.x + r.w / 2, r.y + 138);
+  const skip = onboardingSkipRect();
+  drawButton(skip.x, skip.y, skip.w, skip.h, 'SKIP', { color: 'rgba(20,31,45,0.96)', stroke: '#6f8fa9', font: 12 });
+  ctx.fillStyle = '#6f8fa9'; ctx.font = '10px monospace'; ctx.fillText('BACKSPACE / ESC', r.x + r.w / 2, r.y + r.h - 8);
 }
 
 // wide-screen tactical side panel: mission brief + live objectives, blended into the scene
@@ -1943,8 +2021,16 @@ function drawMenu() {
   ctx.fillStyle = rg;
   ctx.beginPath(); ctx.moveTo(rx, ry); ctx.arc(rx, ry, 80, ra, ra + 0.6); ctx.closePath(); ctx.fill();
   ctx.restore();
-  // title
+  // Custom title masthead: a compact squad insignia and signal bars give the menu its own identity.
   ctx.textAlign = 'center';
+  const tx = GAME_W / 2;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(53,224,255,0.54)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(tx - 42, 18); ctx.lineTo(tx - 20, 18); ctx.lineTo(tx - 10, 28); ctx.lineTo(tx, 12); ctx.lineTo(tx + 10, 28); ctx.lineTo(tx + 20, 18); ctx.lineTo(tx + 42, 18); ctx.stroke();
+  ctx.fillStyle = '#35e0ff'; ctx.beginPath(); ctx.arc(tx, 12, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,181,69,0.6)';
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(tx + i * 10 - 3, 28); ctx.lineTo(tx + i * 10 + 3, 28); ctx.stroke(); }
+  ctx.restore();
   ctx.font = '900 46px monospace';
   ctx.fillStyle = 'rgba(53,224,255,0.14)';
   ctx.fillText('SHADOW SQUAD', GAME_W / 2 + 2, 68);
@@ -1955,6 +2041,8 @@ function drawMenu() {
   ctx.restore();
   ctx.strokeStyle = 'rgba(53,224,255,0.5)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(GAME_W / 2 - 250, 80); ctx.lineTo(GAME_W / 2 + 250, 80); ctx.stroke();
+  ctx.fillStyle = 'rgba(53,224,255,0.55)';
+  for (let x = GAME_W / 2 - 250; x <= GAME_W / 2 + 250; x += 18) ctx.fillRect(x, 78, 7, 3);
   ctx.fillStyle = PAL.amber; ctx.font = 'bold 12px monospace';
   ctx.fillText('// REAL-TIME TACTICS · TWO AGENTS · ZERO ALARMS //', GAME_W / 2, 96);
   // intel + streak (top-left)
@@ -2024,7 +2112,7 @@ function drawMenu() {
   // Keep the first screen focused on deployment; contextual field cues teach in play.
   drawPanel(GAME_W / 2 - 300, 446, 600, 48, {});
   ctx.fillStyle = '#9ccfe5'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('CLICK / TAP TO COMMAND  ·  1 / 2 SWITCH AGENTS  ·  ARROWS NUDGE  ·  [R] EMP', GAME_W / 2, 468);
+  ctx.fillText('CLICK / TAP TO COMMAND  ·  1 / 2 SWITCH AGENTS  ·  WASD / ZQSD OR ARROWS NUDGE  ·  [E] EMP', GAME_W / 2, 468);
   ctx.fillStyle = '#667f95'; ctx.font = '11px monospace';
   ctx.fillText('DEPLOY NOW — THE FIRST OP TEACHES COVER, SWITCHING, AND REMOTE HACKING IN PLAY.', GAME_W / 2, 486);
   // daily bonus toast
@@ -2216,7 +2304,7 @@ function drawFailed() {
   // encouraging tactical tip instead of a punishing game-over vibe
   const tips = [
     'TIP: guards see less in tall grass — crawl through it',
-    'TIP: EMP [R] stuns every sentry nearby for 5 seconds',
+    'TIP: EMP [E] stuns every sentry nearby for 5 seconds',
     'TIP: takedowns from BEHIND are silent — watch the cone',
     'TIP: the TECH hacks terminals from 3 tiles away',
     'TIP: break line of sight and alarms cool down in 10s',
@@ -2237,7 +2325,7 @@ function render() {
   if (state === 'menu') drawMenu();
   else if (state === 'shop') drawShop();
   else if (state === 'briefing') drawBriefing();
-  else if (state === 'playing') { drawBackdrop(); drawWorld(); drawScreenFx(0.8); drawHUD(); }
+  else if (state === 'playing') { drawBackdrop(); drawWorld(); drawScreenFx(0.8); drawHUD(); drawOnboarding(); }
   else if (state === 'complete') drawComplete();
   else if (state === 'failed') drawFailed();
   else { drawBackdrop(); }
@@ -2332,7 +2420,7 @@ if (new URLSearchParams(location.search).get('debug') === '1') {
         terminals: terminals.map(t => ({ x: t.x, y: t.y, done: t.done, progress: t.progress })),
         cameras: cameras.map(c => ({ x: c.x / TILE, y: c.y / TILE, facing: c.facing, stun: c.stun })),
         intel, stars: { ...stars }, upgrades: { ...upgrades }, skin, ownedSkins: { ...ownedSkins }, streak,
-        tutorialStage, checkpointUsed, paused, counts: { particles: particles.length, rings: rings.length, footprints: footprints.length, floats: floats.length, guards: guards.length, cameras: cameras.length },
+        tutorialStage, onboardingActive, checkpointUsed, paused, counts: { particles: particles.length, rings: rings.length, footprints: footprints.length, floats: floats.length, guards: guards.length, cameras: cameras.length },
         missionCount: MISSIONS.length,
       };
     },

@@ -1,15 +1,19 @@
 // Renders covers (3 formats) + gameplay screenshots
 import { chromium } from 'playwright';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true });
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const covers = [
   ['cover-16x9.png', 1920, 1080, false],
-  ['cover-1x1.png', 1080, 1080, true],
+  ['cover-1x1.png', 800, 800, true],
   ['cover-2x3.png', 800, 1200, true],
 ];
 for (const [name, w, h, sq] of covers) {
   const page = await browser.newPage({ viewport: { width: w, height: h } });
-  await page.goto(`file:///home/bartek/Projects/shadow-squad/marketing/cover.html?w=${w}&h=${h}${sq ? '&sq=1' : ''}`);
+  const coverUrl = pathToFileURL(resolve('marketing/cover.html'));
+  coverUrl.search = `?w=${w}&h=${h}${sq ? '&sq=1' : ''}`;
+  await page.goto(coverUrl.href);
   await page.waitForFunction(() => document.title === 'ready');
   await sleep(300);
   await page.locator('#cover').screenshot({ path: 'marketing/' + name });

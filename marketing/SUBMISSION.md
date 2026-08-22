@@ -16,15 +16,15 @@ Coordinate two specialist agents, bypass robot patrols, hack secure facilities, 
 
 ## Full description
 
-Lead Scout and Tech through ten handcrafted infiltration operations. Switch agents instantly, use cover, read moving vision cones, disable cameras with EMP, perform silent takedowns, and coordinate terminal hacks before reaching the extraction zone.
+One clean breach can turn a guarded facility into a silent escape route. Lead Scout and Tech through ten handcrafted infiltration operations: issue routes, read vision cones, use cover, breach terminals, then bring both agents to extraction.
 
-Each operation rewards careful planning: Scout moves quickly and can disable a robot from behind, while Tech remotely hacks terminals and carries EMP charges. Later facilities introduce laser gates, rotating cameras, armored sentries, and timed twin-terminal objectives. Earn up to three stars for speed and ghost play, then spend Intel on gadgets, faster hacking, and agent cosmetics.
+The core loop is observe, command, adapt. Scout moves quickly and can disable robots from behind; Tech remotely hacks terminals and carries EMP charges to disable sentries and cameras. Later operations add laser gates, rotating cameras, armoured sentries, patrol-route previews, and timed twin-terminal objectives with clear sync telegraphs.
 
-The first mission teaches movement, concealment, agent switching, and remote hacking through short in-play cues. The tactical view previews a selected agent’s route and the next sentry patrol segment, while one reset to the latest safe position keeps an alarm failure from becoming repetitive.
+Earn up to three stars for speed and zero-alarm play, collect Intel, and spend it on an extra EMP slot, faster hacks, sprint servos, and agent cosmetics. A calm-position reset is available once per mission, retaining earned tactical progress instead of forcing a full replay. Typical operations take 3–8 minutes.
 
 ## Controls
 
-- Desktop: click to command the selected agent; `1` / `2` switch Scout and Tech; arrow keys issue one-tile nudges; `R` activates EMP.
+- Desktop: click to command the selected agent; `1` / `2` switch Scout and Tech; `E` activates EMP; arrow keys issue one-tile nudges. Physical-key bindings work across layouts, including WASD/ZQSD (AZERTY) keyboards.
 - Mobile: tap to command or switch agents; a 52 CSS-pixel Deploy control starts the first operation; the in-game EMP and mute controls are at least 44 CSS px.
 
 ## SDK, data, ads, and safety

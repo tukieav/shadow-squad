@@ -73,16 +73,11 @@ if (!sqMode) {
   agent(W * 0.46, H * 0.48, -0.4, 2.0 * k, '#3fd8ff');
   agent(W * 0.56, H * 0.78, -0.9, 1.7 * k, '#ffab40');
   g.textAlign = 'left'; g.textBaseline = 'middle';
-  g.shadowColor = 'rgba(80,200,255,0.85)'; g.shadowBlur = 34 * k;
   g.fillStyle = '#ffffff';
   const fs = Math.min(170 * k, W * 0.105);
   g.font = '900 ' + fs + 'px "Segoe UI", Arial, sans-serif';
   g.fillText('SHADOW', W * 0.05, H * 0.38);
   g.fillText('SQUAD', W * 0.05, H * 0.38 + fs * 1.02);
-  g.shadowBlur = 0;
-  g.fillStyle = 'rgba(255,255,255,0.85)';
-  g.font = '600 ' + (46 * k) + 'px "Segoe UI", Arial, sans-serif';
-  g.fillText('Sneak. Hack. Vanish.', W * 0.052, H * 0.38 + fs * 1.8);
 } else {
   // portrait/square: title top (wrapped), scene below
   cone(W * 0.78, H * 0.52, Math.PI * 0.9, 340 * k, 'rgba(255,220,110,0.28)');
@@ -94,16 +89,11 @@ if (!sqMode) {
   agent(W * 0.38, H * 0.62, -0.4, 1.9 * k, '#3fd8ff');
   agent(W * 0.55, H * 0.76, -0.9, 1.6 * k, '#ffab40');
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.shadowColor = 'rgba(80,200,255,0.85)'; g.shadowBlur = 28 * k;
   g.fillStyle = '#ffffff';
   const fs = Math.min(150 * k, W * 0.155);
   g.font = '900 ' + fs + 'px "Segoe UI", Arial, sans-serif';
   g.fillText('SHADOW', W * 0.5, H * 0.11);
   g.fillText('SQUAD', W * 0.5, H * 0.11 + fs * 1.02);
-  g.shadowBlur = 0;
-  g.fillStyle = 'rgba(255,255,255,0.85)';
-  g.font = '600 ' + Math.min(44 * k, W * 0.05) + 'px "Segoe UI", Arial, sans-serif';
-  g.fillText('Sneak. Hack. Vanish.', W * 0.5, H * 0.11 + fs * 1.75);
 }
 document.title = 'ready';
 </script>
